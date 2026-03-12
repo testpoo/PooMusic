@@ -188,7 +188,7 @@ class MusicPlayer(Gtk.Window):
         # 播放列表标题 + 加载状态 - 无间距
         title_box = Gtk.Box(spacing=3)
         playlist_title = Gtk.Label()
-        playlist_title.set_markup('<span weight="bold" size="larger" color="red">铺音乐</span>')
+        playlist_title.set_markup('<span weight="bold" size="xx-large" color="#e63946">铺音乐</span>')
         playlist_title.set_margin_top(0)
         playlist_title.set_margin_bottom(0)
         playlist_title.set_size_request(-1, 40)  # 限制宽度，适配歌词区
