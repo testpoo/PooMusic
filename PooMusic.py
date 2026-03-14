@@ -14,8 +14,6 @@ import threading
 
 # 初始化GStreamer
 Gst.init(None)
-# 允许GObject多线程操作
-# GObject.threads_init()
 
 # 定义音乐文件夹路径（适配不同系统的"音乐"文件夹）
 if os.name == 'nt':  # Windows系统
@@ -87,7 +85,7 @@ class MusicPlayer(Gtk.Window):
     def __init__(self):
         super().__init__(title='铺音乐播放器')
         self.set_default_size(1000, 600)
-        self.set_border_width(10)  # 关键修改：完全移除窗口内边距
+        self.set_border_width(10)  # 关键修改：窗口内边距设为10
 
         # 核心状态
         self.playlist = []          # 播放列表 [(文件路径, 歌曲名, 时长秒数), ...]
@@ -163,15 +161,18 @@ class MusicPlayer(Gtk.Window):
         playing_box.set_size_request(-1, 40)     # 固定高度
         
         # 标题标签
-        #title_label = Gtk.Label()
-        #title_label.set_markup('<span weight="bold" size="large">当前播放：</span>')
-        #playing_box.pack_start(title_label, False, False, 0)
+        title_label = Gtk.Label()
+        title_label.set_markup('<span weight="bold" size="large">当前播放：</span>')
+        title_label.set_xalign(1.0)  # 右对齐
+        title_label.set_size_request(300, -1)
+        playing_box.pack_start(title_label, False, False, 0)
         
         # 当前歌曲显示标签（核心）
         self.current_song_label = Gtk.Label()
         self.current_song_label.set_markup('<span size="large" color="#e63946">未播放任何歌曲</span>')
+        self.current_song_label.set_xalign(0.0)  # 左对齐
         self.current_song_label.set_ellipsize(3)  # 文本过长时省略
-        self.current_song_label.set_size_request(650, -1)  # 限制宽度，适配歌词区
+        self.current_song_label.set_size_request(350, -1)  # 限制宽度，适配歌词区
         playing_box.pack_start(self.current_song_label, False, False, 0)
         
         parent.pack_start(playing_box, False, False, 0)
@@ -191,7 +192,7 @@ class MusicPlayer(Gtk.Window):
         playlist_title.set_markup('<span weight="bold" size="xx-large" color="#e63946">铺音乐</span>')
         playlist_title.set_margin_top(0)
         playlist_title.set_margin_bottom(0)
-        playlist_title.set_size_request(-1, 40)  # 限制宽度，适配歌词区
+        playlist_title.set_size_request(-1, 40)  # 限制高度，适配歌词区
         
         self.loading_label = Gtk.Label()
         self.loading_label.set_markup('<span size="small" color="#666666">加载中...</span>')
@@ -470,7 +471,10 @@ class MusicPlayer(Gtk.Window):
         if not FAST_LOAD:
             return 0.0
         try:
-            dur = self.player.query_duration(Gst.Format.TIME)[1] / Gst.SECOND
+            if self.player.query_duration(Gst.Format.TIME)[0] == False:
+                dur = "00:00"
+            else:
+                dur = self.player.query_duration(Gst.Format.TIME)[1] / Gst.SECOND
             for i, (path, name, _) in enumerate(self.playlist):
                 if path == file_path:
                     self.playlist[i] = (path, name, dur)
@@ -492,7 +496,8 @@ class MusicPlayer(Gtk.Window):
             label.set_markup(f'<span size="large">{txt}</span>')
             label.set_halign(0.5)
             label.set_valign(0.5)
-            label.set_padding(5, 5)
+            label.set_margin_top(5)
+            label.set_margin_bottom(5)
             self.lrc_listbox.add(label)
             self.lrc_labels.append(label)
         self.lrc_listbox.show_all()
@@ -561,10 +566,15 @@ class MusicPlayer(Gtk.Window):
         """手动添加歌曲到播放列表"""
         dlg = Gtk.FileChooserDialog(
             title='选择音频文件', 
-            parent=self, 
-            action=Gtk.FileChooserAction.OPEN,
-            buttons=(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_OPEN, Gtk.ResponseType.OK)
+            parent=None, 
+            action=Gtk.FileChooserAction.OPEN
         )
+
+        dlg.add_buttons(
+            Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,  # 取消按钮（系统默认样式）
+            Gtk.STOCK_OPEN, Gtk.ResponseType.OK         # 打开按钮（系统默认样式）
+        )
+
         dlg.set_select_multiple(True)
         filt = Gtk.FileFilter()
         filt.set_name('音频文件')
@@ -584,6 +594,8 @@ class MusicPlayer(Gtk.Window):
                 self.load_song(0, auto_play=False)
                 self.update_current_song_display()
         dlg.destroy()
+        song_count = len(self.playlist)
+        self.loading_label.set_markup(f'<span size="small" color="#666666">已加载 {song_count} 首</span>')
 
     def on_clear_playlist(self, widget):
         """清空播放列表"""
@@ -651,7 +663,8 @@ class MusicPlayer(Gtk.Window):
         self.scale.set_value(0)
         self.current_lrc_index = -1
         self.highlight_current_lrc(-1)
-        self.label_duration.set_label(f"00:00 / {self.format_time(self.current_duration)}")
+        self.current_duration = self.label_duration.get_text().split("/")[1].strip()
+        self.label_duration.set_label(f"00:00 / {self.current_duration}")
         self.update_current_song_display()
 
     def on_eos(self, bus, msg):
