@@ -310,7 +310,7 @@ class MusicPlayer(Gtk.Window):
         self.scale.set_draw_value(False)
         
         # 时长显示标签
-        self.label_duration = Gtk.Label(label='00:00 / 00:00')
+        self.label_duration = Gtk.Label(label='--:-- / --:--')  # 初始占位符
         
         # 组装进度条区域
         progress_box.pack_start(self.scale, True, True, 0)
@@ -389,8 +389,13 @@ class MusicPlayer(Gtk.Window):
                 self.load_song(idx)
                 self.play_flag = True
                 self.btn_play.set_label('暂停')
-                self.player.set_state(Gst.State.PLAYING)
+                # 延迟启动播放，等待时长加载
+                GLib.idle_add(self.delayed_play)
                 self.update_current_song_display()
+
+    def delayed_play(self):
+        """延迟播放，确保时长先加载完成"""
+        self.player.set_state(Gst.State.PLAYING)
 
     def reset_lrc_display(self):
         """重置歌词显示"""
@@ -404,16 +409,19 @@ class MusicPlayer(Gtk.Window):
         self.lrc_listbox.show_all()
 
     def format_time(self, seconds):
-        """将秒数格式化为 mm:ss 字符串"""
+        """将秒数格式化为 mm:ss 字符串（增加边界校验）"""
         try:
+            # 过滤负数和无效值
+            if not isinstance(seconds, (int, float)) or seconds < 0 or seconds > 3600*24:
+                return "--:--"
             minutes = int(seconds // 60)
             seconds = int(seconds % 60)
             return f"{minutes:02d}:{seconds:02d}"
         except:
-            return "00:00"
+            return "--:--"
 
     def get_song_duration_fast(self, file_path):
-        """快速获取时长"""
+        """快速获取时长（优化异常处理）"""
         if FAST_LOAD:
             return 0.0
         try:
@@ -428,13 +436,15 @@ class MusicPlayer(Gtk.Window):
                 GLib.usleep(50000)
             dur = temp_player.query_duration(Gst.Format.TIME)[1] / Gst.SECOND
             temp_player.set_state(Gst.State.NULL)
-            return dur
+            return max(0, dur)  # 确保时长非负
         except:
             return 0.0
 
     def add_song_to_playlist(self, song_info):
         """线程安全的添加歌曲到播放列表"""
         file_path, song_name, duration_sec = song_info
+        # 确保时长非负
+        duration_sec = max(0, duration_sec)
         self.playlist.append((file_path, song_name, duration_sec))
         self.playlist_store.append([file_path, song_name, duration_sec])
         if len(self.playlist) == 1:
@@ -467,14 +477,16 @@ class MusicPlayer(Gtk.Window):
         self.loading_thread.start()
 
     def lazy_load_duration(self, file_path):
-        """播放时懒加载时长"""
+        """播放时懒加载时长（优化异常处理）"""
         if not FAST_LOAD:
             return 0.0
         try:
-            if self.player.query_duration(Gst.Format.TIME)[0] == False:
-                dur = "00:00"
-            else:
-                dur = self.player.query_duration(Gst.Format.TIME)[1] / Gst.SECOND
+            # 先检查是否能获取时长
+            success, dur_ns = self.player.query_duration(Gst.Format.TIME)
+            if not success:
+                return 0.0
+            dur = dur_ns / Gst.SECOND
+            dur = max(0, dur)  # 确保非负
             for i, (path, name, _) in enumerate(self.playlist):
                 if path == file_path:
                     self.playlist[i] = (path, name, dur)
@@ -534,18 +546,31 @@ class MusicPlayer(Gtk.Window):
             self.playlist_view.queue_draw()
 
     def load_song(self, idx, auto_play=True):
-        """加载指定索引的歌曲"""
+        """加载指定索引的歌曲（优化时长显示）"""
         if idx < 0 or idx >= len(self.playlist):
             return
         self.player.set_state(Gst.State.READY)
         self.current_song_idx = idx
         song_path, song_name, duration_sec = self.playlist[idx]
+        
+        # 先设置占位符，避免0/负数显示
+        self.label_duration.set_label('--:-- / --:--')
+        self.scale.set_value(0)
+        self.curr_pos = 0.0
+        self.current_lrc_index = -1
+        
+        # 设置播放文件
         self.player.set_property('uri', f'file://{song_path}')
+        
+        # 懒加载时长并更新显示
         if FAST_LOAD and duration_sec == 0.0:
-            duration_sec = self.lazy_load_duration(song_path)
-            self.playlist[idx] = (song_path, song_name, duration_sec)
-        self.current_duration = duration_sec
-        self.label_duration.set_label(f"00:00 / {self.format_time(duration_sec)}")
+            # 异步加载时长，避免阻塞UI
+            GLib.idle_add(self.load_duration_and_update, song_path, idx)
+        else:
+            self.current_duration = max(0, duration_sec)
+            self.label_duration.set_label(f"00:00 / {self.format_time(self.current_duration)}")
+        
+        # 加载歌词
         base = os.path.splitext(song_path)[0]
         lrc_path = None
         for ext in ['.lrc', '.LRC']:
@@ -555,12 +580,20 @@ class MusicPlayer(Gtk.Window):
                 break
         self.lrc = LrcParser(lrc_path)
         self.update_lrc_display()
-        self.current_lrc_index = -1
-        self.scale.set_value(0)
-        self.curr_pos = 0.0
+        
+        # 自动播放逻辑
         if auto_play and self.play_flag:
-            self.player.set_state(Gst.State.PLAYING)
+            # 延迟播放，等待时长加载
+            GLib.idle_add(self.delayed_play)
+        
         self.update_current_song_display()
+
+    def load_duration_and_update(self, song_path, idx):
+        """异步加载时长并更新显示"""
+        duration_sec = self.lazy_load_duration(song_path)
+        self.current_duration = max(0, duration_sec)
+        self.playlist[idx] = (song_path, self.playlist[idx][1], duration_sec)
+        self.label_duration.set_label(f"00:00 / {self.format_time(self.current_duration)}")
 
     def on_add_song(self, widget):
         """手动添加歌曲到播放列表"""
@@ -606,7 +639,7 @@ class MusicPlayer(Gtk.Window):
         self.player.set_state(Gst.State.READY)
         self.btn_play.set_label('播放')
         self.reset_lrc_display()
-        self.label_duration.set_label('00:00 / 00:00')
+        self.label_duration.set_label('--:-- / --:--')  # 恢复占位符
         self.update_current_song_display()
 
     def on_prev_song(self, widget):
@@ -655,7 +688,7 @@ class MusicPlayer(Gtk.Window):
         self.update_current_song_display()
 
     def on_stop(self, widget):
-        """停止播放"""
+        """停止播放（优化时长显示）"""
         self.player.set_state(Gst.State.READY)
         self.play_flag = False
         self.btn_play.set_label('播放')
@@ -663,8 +696,13 @@ class MusicPlayer(Gtk.Window):
         self.scale.set_value(0)
         self.current_lrc_index = -1
         self.highlight_current_lrc(-1)
-        self.current_duration = self.label_duration.get_text().split("/")[1].strip()
-        self.label_duration.set_label(f"00:00 / {self.current_duration}")
+        
+        # 保留总时长，仅重置当前进度
+        if self.current_duration > 0:
+            self.label_duration.set_label(f"00:00 / {self.format_time(self.current_duration)}")
+        else:
+            self.label_duration.set_label('--:-- / --:--')
+            
         self.update_current_song_display()
 
     def on_eos(self, bus, msg):
@@ -686,28 +724,49 @@ class MusicPlayer(Gtk.Window):
         print(f"播放错误: {err.message} (调试信息: {debug})")
 
     def get_pos(self):
-        """获取当前播放位置和总时长"""
+        """获取当前播放位置和总时长（增强异常处理）"""
         try:
-            dur = self.player.query_duration(Gst.Format.TIME)[1] / Gst.SECOND
-            pos = self.player.query_position(Gst.Format.TIME)[1] / Gst.SECOND
-            if FAST_LOAD and self.current_duration == 0.0:
+            # 安全获取时长
+            success_dur, dur_ns = self.player.query_duration(Gst.Format.TIME)
+            if not success_dur:
+                dur = self.current_duration
+            else:
+                dur = dur_ns / Gst.SECOND
+                dur = max(0, dur)  # 确保非负
+            
+            # 安全获取进度
+            success_pos, pos_ns = self.player.query_position(Gst.Format.TIME)
+            if not success_pos:
+                pos = 0.0
+            else:
+                pos = pos_ns / Gst.SECOND
+                pos = max(0, min(pos, dur))  # 限制进度在0~总时长之间
+            
+            # 更新缓存时长
+            if FAST_LOAD and self.current_duration == 0.0 and dur > 0:
                 self.current_duration = dur
-                self.label_duration.set_label(f"{self.format_time(pos)} / {self.format_time(dur)}")
                 idx = self.current_song_idx
                 if idx >=0 and idx < len(self.playlist):
                     path, name, _ = self.playlist[idx]
                     self.playlist[idx] = (path, name, dur)
+            
             return pos, dur
         except:
-            return 0, self.current_duration
+            return 0.0, max(0, self.current_duration)
 
     def on_seek(self, widget, event):
-        """进度条拖动跳转"""
+        """进度条拖动跳转（增加边界校验）"""
         if not self.playlist or self.current_song_idx == -1:
             return
         pos, dur = self.get_pos()
+        if dur <= 0:
+            return
+            
         val = self.scale.get_value()
         seek_pos = dur * val / 100
+        # 限制跳转范围在合法区间
+        seek_pos = max(0, min(seek_pos, dur))
+        
         self.player.seek_simple(
             Gst.Format.TIME, 
             Gst.SeekFlags.FLUSH | Gst.SeekFlags.KEY_UNIT, 
@@ -718,17 +777,25 @@ class MusicPlayer(Gtk.Window):
         self.label_duration.set_label(f"{self.format_time(seek_pos)} / {self.format_time(dur)}")
 
     def update_ui(self):
-        """定时更新播放进度"""
+        """定时更新播放进度（优化显示逻辑）"""
         if self.play_flag and self.playlist and self.current_song_idx != -1:
             pos, dur = self.get_pos()
             self.curr_pos = pos
+            
+            # 只有当时长有效时才更新进度条和显示
             if dur > 0:
                 self.scale.set_value(pos / dur * 100)
                 self.label_duration.set_label(f"{self.format_time(pos)} / {self.format_time(dur)}")
-            new_lrc_idx = self.lrc.get_current_line_index(pos)
-            if new_lrc_idx != self.current_lrc_index:
-                self.current_lrc_index = new_lrc_idx
-                self.highlight_current_lrc(new_lrc_idx)
+                
+                # 更新歌词高亮
+                new_lrc_idx = self.lrc.get_current_line_index(pos)
+                if new_lrc_idx != self.current_lrc_index:
+                    self.current_lrc_index = new_lrc_idx
+                    self.highlight_current_lrc(new_lrc_idx)
+            else:
+                # 时长未加载完成时显示占位符
+                self.label_duration.set_label('--:-- / --:--')
+        
         self.update_current_song_display()
         return True
 
