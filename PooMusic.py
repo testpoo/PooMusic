@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # coding=utf-8
 
-# Depends: gstreamer1.0-plugins-good  gstreamer1.0-plugins-ugly gir1.2-gst-plugins-base-1.0 gir1.2-gstreamer-1.0 libgssdp-1.6-0 libgstreamer-plugins-bad1.0-0 libgupnp-1.6-0 libgupnp-igd-1.6-0 ibnice10 libva-drm2 libva2 python3-gst-1.0 python3-typing-extensions papirus-icon-theme
+# Depends: python3-gi-cairo gir1.2-gtk-3.0 gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly gir1.2-gst-plugins-base-1.0 gir1.2-gstreamer-1.0 libgssdp-1.6-0 libgstreamer-plugins-bad1.0-0 libgupnp-1.6-0 libgupnp-igd-1.6-0 libva-drm2 libva2 python3-gst-1.0 python3-typing-extensions adwaita-icon-theme 
 
 import gi
 import random
@@ -99,7 +99,7 @@ class MusicPlayer(Gtk.Window):
         
         # 播放模式：0-顺序 1-循环 2-单曲循环 3-随机
         self.play_mode = 0
-        self.mode_labels = [{'顺序播放':'media-playlist-normal'}, {'循环播放':'media-playlist-repeat'}, {'单曲循环':'media-playlist-repeat-song'}, {'随机播放':'media-playlist-shuffle'}]
+        self.mode_labels = [{'顺序播放':'media-playlist-consecutive-symbolic'}, {'循环播放':'media-playlist-repeat-symbolic'}, {'单曲循环':'media-playlist-repeat-song-symbolic'}, {'随机播放':'media-playlist-shuffle-symbolic'}]
         # 新增：播放模式按钮引用
         self.mode_buttons = []
         
@@ -167,18 +167,18 @@ class MusicPlayer(Gtk.Window):
         playing_box.set_size_request(-1, 40)     # 固定高度
         
         # 标题标签
-        title_label = Gtk.Label()
-        title_label.set_markup('<span weight="bold" size="large">当前播放：</span>')
-        title_label.set_xalign(1.0)  # 右对齐
-        title_label.set_size_request(300, -1)
-        playing_box.pack_start(title_label, False, False, 0)
+        # title_label = Gtk.Label()
+        # title_label.set_markup('<span weight="bold" size="large">当前播放：</span>')
+        # title_label.set_xalign(1.0)  # 右对齐
+        # title_label.set_size_request(300, -1)
+        # playing_box.pack_start(title_label, False, False, 0)
         
         # 当前歌曲显示标签（核心）
         self.current_song_label = Gtk.Label()
         self.current_song_label.set_markup('<span size="large" color="#e63946">未播放任何歌曲</span>')
-        self.current_song_label.set_xalign(0.0)  # 左对齐
+        # self.current_song_label.set_xalign(0.0)  # 左对齐
         self.current_song_label.set_ellipsize(3)  # 文本过长时省略
-        self.current_song_label.set_size_request(350, -1)  # 限制宽度，适配歌词区
+        self.current_song_label.set_size_request(720, -1)  # 限制宽度，适配歌词区
         playing_box.pack_start(self.current_song_label, False, False, 0)
         
         parent.pack_start(playing_box, False, False, 0)
@@ -213,19 +213,19 @@ class MusicPlayer(Gtk.Window):
         playlist_ctrl = Gtk.Box(spacing=3)
         btn_add = Gtk.Button()
         btn_add.set_tooltip_text("添加歌曲")
-        icon = Gtk.Image.new_from_icon_name("media-track-add-amarok", Gtk.IconSize.BUTTON)
+        icon = Gtk.Image.new_from_icon_name("list-add-symbolic", Gtk.IconSize.BUTTON)
         btn_add.set_image(icon)
         btn_add.set_always_show_image(True)  # 让图标居中显示
 
         btn_remove = Gtk.Button()
         btn_remove.set_tooltip_text("删除歌曲")
-        icon = Gtk.Image.new_from_icon_name("media-track-remove-amarok", Gtk.IconSize.BUTTON)
+        icon = Gtk.Image.new_from_icon_name("list-remove-symbolic", Gtk.IconSize.BUTTON)
         btn_remove.set_image(icon)
         btn_remove.set_always_show_image(True)  # 让图标居中显示
 
         btn_clear = Gtk.Button()
         btn_clear.set_tooltip_text("清空列表")
-        icon = Gtk.Image.new_from_icon_name("rabbitvcs-clear", Gtk.IconSize.BUTTON)
+        icon = Gtk.Image.new_from_icon_name("media-removable-symbolic", Gtk.IconSize.BUTTON)
         btn_clear.set_image(icon)
         btn_clear.set_always_show_image(True)  # 让图标居中显示
 
@@ -327,25 +327,25 @@ class MusicPlayer(Gtk.Window):
         # 播放控制按钮
         self.btn_prev = Gtk.Button()
         self.btn_prev.set_tooltip_text("上一曲")
-        icon = Gtk.Image.new_from_icon_name("media-skip-backward", Gtk.IconSize.BUTTON)
+        icon = Gtk.Image.new_from_icon_name("media-skip-backward-symbolic", Gtk.IconSize.BUTTON)
         self.btn_prev.set_image(icon)
         self.btn_prev.set_always_show_image(True)  # 让图标居中显示
 
         self.btn_play = Gtk.Button()
         self.btn_play.set_tooltip_text("播放")
-        icon = Gtk.Image.new_from_icon_name("media-playback-start", Gtk.IconSize.BUTTON)
+        icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON)
         self.btn_play.set_image(icon)
         self.btn_play.set_always_show_image(True)  # 让图标居中显示
 
         self.btn_next = Gtk.Button()
         self.btn_next.set_tooltip_text("下一曲")
-        icon = Gtk.Image.new_from_icon_name("media-skip-forward", Gtk.IconSize.BUTTON)
+        icon = Gtk.Image.new_from_icon_name("media-skip-forward-symbolic", Gtk.IconSize.BUTTON)
         self.btn_next.set_image(icon)
         self.btn_next.set_always_show_image(True)  # 让图标居中显示
 
         self.btn_stop = Gtk.Button()
         self.btn_stop.set_tooltip_text("停止")
-        icon = Gtk.Image.new_from_icon_name("media-playback-stop", Gtk.IconSize.BUTTON)
+        icon = Gtk.Image.new_from_icon_name("media-playback-stop-symbolic", Gtk.IconSize.BUTTON)
         self.btn_stop.set_image(icon)
         self.btn_stop.set_always_show_image(True)  # 让图标居中显示
 
@@ -451,7 +451,7 @@ class MusicPlayer(Gtk.Window):
                 self.load_song(idx)
                 self.play_flag = True
                 self.btn_play.set_tooltip_text("暂停")
-                icon = Gtk.Image.new_from_icon_name("media-playback-pause", Gtk.IconSize.BUTTON)
+                icon = Gtk.Image.new_from_icon_name("media-playback-pause-symbolic", Gtk.IconSize.BUTTON)
                 self.btn_play.set_image(icon)
                 # 延迟启动播放，等待时长加载
                 GLib.idle_add(self.delayed_play)
@@ -467,7 +467,7 @@ class MusicPlayer(Gtk.Window):
             self.lrc_listbox.remove(child)
         self.lrc_labels.clear()
         init_label = Gtk.Label()
-        init_label.set_markup('<span size="xx-large" weight="bold">未加载歌词</span>')
+        init_label.set_markup('<span size="xx-large" weight="bold">未找到歌词</span>')
         self.lrc_listbox.add(init_label)
         self.lrc_labels.append(init_label)
         self.lrc_listbox.show_all()
@@ -598,12 +598,14 @@ class MusicPlayer(Gtk.Window):
 
     def update_current_song_display(self):
         """更新顶部当前播放歌曲标签"""
-        if self.current_song_idx >= 0 and self.current_song_idx < len(self.playlist):
+        if not os.path.exists(self.playlist[self.current_song_idx][0]):
+            self.current_song_label.set_markup('<span size="large" color="#666666">未找到歌曲</span>')
+        elif self.current_song_idx >= 0 and self.current_song_idx < len(self.playlist):
             song_name = self.playlist[self.current_song_idx][1]
             if self.play_flag:
-                self.current_song_label.set_markup(f'<span size="large" color="#e63946" weight="bold">▶ {song_name}</span>')
+                self.current_song_label.set_markup(f'<span size="large" weight="bold">当前播放: </span><span size="large" color="#e63946" weight="bold">{song_name}</span>')
             else:
-                self.current_song_label.set_markup(f'<span size="large" color="#666666">⏸ {song_name}</span>')
+                self.current_song_label.set_markup(f'<span size="large" weight="bold">当前暂停: </span><span size="large" color="#aaaaaa" weight="bold">{song_name}</span>')
         else:
             self.current_song_label.set_markup('<span size="large" color="#666666">未播放任何歌曲</span>')
         if self.playlist_view:
@@ -625,7 +627,7 @@ class MusicPlayer(Gtk.Window):
         
         # 设置播放文件
         self.player.set_property('uri', f'file://{song_path}')
-        
+
         # 懒加载时长并更新显示
         if FAST_LOAD and duration_sec == 0.0:
             # 异步加载时长，避免阻塞UI
@@ -715,7 +717,7 @@ class MusicPlayer(Gtk.Window):
             self.player.set_state(Gst.State.READY)
             self.play_flag = False
             self.btn_play.set_tooltip_text("播放")
-            icon = Gtk.Image.new_from_icon_name("media-playback-start", Gtk.IconSize.BUTTON)
+            icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON)
             self.btn_play.set_image(icon)
 
         # 从播放列表中删除对应条目
@@ -762,7 +764,7 @@ class MusicPlayer(Gtk.Window):
         self.play_flag = False
         self.player.set_state(Gst.State.READY)
         self.btn_play.set_tooltip_text("播放")
-        icon = Gtk.Image.new_from_icon_name("media-playback-start", Gtk.IconSize.BUTTON)
+        icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON)
         self.btn_play.set_image(icon)
         self.reset_lrc_display()
         self.label_duration.set_label('--:-- / --:--')  # 恢复占位符
@@ -831,13 +833,13 @@ class MusicPlayer(Gtk.Window):
                 self.player.set_state(Gst.State.PLAYING)
                 self.play_flag = True
                 self.btn_play.set_tooltip_text("暂停")
-                icon = Gtk.Image.new_from_icon_name("media-playback-pause", Gtk.IconSize.BUTTON)
+                icon = Gtk.Image.new_from_icon_name("media-playback-pause-symbolic", Gtk.IconSize.BUTTON)
                 self.btn_play.set_image(icon)
             else:
                 self.player.set_state(Gst.State.PAUSED)
                 self.play_flag = False
                 self.btn_play.set_tooltip_text("播放")
-                icon = Gtk.Image.new_from_icon_name("media-playback-start", Gtk.IconSize.BUTTON)
+                icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON)
                 self.btn_play.set_image(icon)
         self.update_current_song_display()
 
@@ -846,7 +848,7 @@ class MusicPlayer(Gtk.Window):
         self.player.set_state(Gst.State.READY)
         self.play_flag = False
         self.btn_play.set_tooltip_text("播放")
-        icon = Gtk.Image.new_from_icon_name("media-playback-start", Gtk.IconSize.BUTTON)
+        icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON)
         self.btn_play.set_image(icon)
         self.curr_pos = 0.0
         self.scale.set_value(0)
