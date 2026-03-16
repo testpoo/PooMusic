@@ -598,7 +598,7 @@ class MusicPlayer(Gtk.Window):
 
     def update_current_song_display(self):
         """更新顶部当前播放歌曲标签"""
-        if not os.path.exists(self.playlist[self.current_song_idx][0]):
+        if self.current_song_idx != -1 and not os.path.exists(self.playlist[self.current_song_idx][0]):
             self.current_song_label.set_markup('<span size="large" color="#666666">未找到歌曲</span>')
         elif self.current_song_idx >= 0 and self.current_song_idx < len(self.playlist):
             song_name = self.playlist[self.current_song_idx][1]
@@ -675,6 +675,7 @@ class MusicPlayer(Gtk.Window):
         )
 
         dlg.set_select_multiple(True)
+        dlg.set_current_folder(MUSIC_DIR)
         filt = Gtk.FileFilter()
         filt.set_name('音频文件')
         for ext in ['mp3', 'flac', 'wav', 'ogg', 'm4a', 'aac', 'wma']:
