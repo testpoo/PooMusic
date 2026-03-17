@@ -7,7 +7,6 @@
 # Python GTK 核心组
 python3-gi-cairo
 gir1.2-gtk-3.0
-adwaita-icon-theme
 
 # GStreamer 多媒体组（音视频）
 python3-gst-1.0

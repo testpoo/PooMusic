@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 # coding=utf-8
 
-# Depends: python3-gi python3-gi-cairo gir1.2-gtk-3.0 gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly gir1.2-gst-plugins-base-1.0 gir1.2-gstreamer-1.0 libgssdp-1.6-0 libgstreamer-plugins-bad1.0-0 libgupnp-1.6-0 libgupnp-igd-1.6-0 libva-drm2 libva2 python3-gst-1.0 python3-typing-extensions adwaita-icon-theme
+# Depends: python3-gi python3-gi-cairo gir1.2-gtk-3.0 gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly gir1.2-gst-plugins-base-1.0 gir1.2-gstreamer-1.0 libgssdp-1.6-0 libgstreamer-plugins-bad1.0-0 libgupnp-1.6-0 libgupnp-igd-1.6-0 libva-drm2 libva2 python3-gst-1.0
 
 import gi
 import random
 gi.require_version('Gtk', '3.0')
 gi.require_version('Gst', '1.0')
-from gi.repository import Gtk, Gst, GLib, GObject
+from gi.repository import Gtk, Gst, GLib, GObject, Gio, GdkPixbuf
 import os
 import re
 import pathlib
 import threading
+import base64
 
 # 初始化GStreamer
 Gst.init(None)
@@ -27,6 +28,27 @@ else:  # Linux/Mac系统（中文环境）
 
 # 配置项：可选择是否快速加载（跳过时长获取）
 FAST_LOAD = True  # True=快速加载（无时长），False=精确时长（稍慢）
+
+b64_add = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmVyc2lvbj0iMS4xIiB2aWV3Qm94PSIwIDAgMTYgMTYiPgogPGRlZnM+CiAgPHN0eWxlIGlkPSJjdXJyZW50LWNvbG9yLXNjaGVtZSIgdHlwZT0idGV4dC9jc3MiPgogICAuQ29sb3JTY2hlbWUtVGV4dCB7IGNvbG9yOiM0NDQ0NDQ7IH0gLkNvbG9yU2NoZW1lLUhpZ2hsaWdodCB7IGNvbG9yOiM0Mjg1ZjQ7IH0gLkNvbG9yU2NoZW1lLU5ldXRyYWxUZXh0IHsgY29sb3I6I2ZmOTgwMDsgfSAuQ29sb3JTY2hlbWUtUG9zaXRpdmVUZXh0IHsgY29sb3I6IzRjYWY1MDsgfSAuQ29sb3JTY2hlbWUtTmVnYXRpdmVUZXh0IHsgY29sb3I6I2Y0NDMzNjsgfQogIDwvc3R5bGU+CiA8L2RlZnM+CiA8cGF0aCBzdHlsZT0iZmlsbDpjdXJyZW50Q29sb3IiIGNsYXNzPSJDb2xvclNjaGVtZS1UZXh0IiBkPSJNIDcsMSBWIDcgSCAxIHYgMiBoIDYgdiA2IEggOSBWIDkgaCA2IFYgNyBIIDkgViAxIFoiLz4KPC9zdmc+Cg=="
+b64_remove = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmVyc2lvbj0iMS4xIiB2aWV3Qm94PSIwIDAgMTYgMTYiPgogPGRlZnM+CiAgPHN0eWxlIGlkPSJjdXJyZW50LWNvbG9yLXNjaGVtZSIgdHlwZT0idGV4dC9jc3MiPgogICAuQ29sb3JTY2hlbWUtVGV4dCB7IGNvbG9yOiM0NDQ0NDQ7IH0gLkNvbG9yU2NoZW1lLUhpZ2hsaWdodCB7IGNvbG9yOiM0Mjg1ZjQ7IH0gLkNvbG9yU2NoZW1lLU5ldXRyYWxUZXh0IHsgY29sb3I6I2ZmOTgwMDsgfSAuQ29sb3JTY2hlbWUtUG9zaXRpdmVUZXh0IHsgY29sb3I6IzRjYWY1MDsgfSAuQ29sb3JTY2hlbWUtTmVnYXRpdmVUZXh0IHsgY29sb3I6I2Y0NDMzNjsgfQogIDwvc3R5bGU+CiA8L2RlZnM+CiA8cGF0aCBzdHlsZT0iZmlsbDpjdXJyZW50Q29sb3IiIGNsYXNzPSJDb2xvclNjaGVtZS1UZXh0IiBkPSJNIDEsNyBWIDkgSCAxNSBWIDcgWiIvPgo8L3N2Zz4K"
+b64_clear = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDE2IDE2Ij4KIDxkZWZzPgogIDxzdHlsZSBpZD0iY3VycmVudC1jb2xvci1zY2hlbWUiIHR5cGU9InRleHQvY3NzIj4KICAgLkNvbG9yU2NoZW1lLVRleHQgeyBjb2xvcjojNDQ0NDQ0OyB9IC5Db2xvclNjaGVtZS1IaWdobGlnaHQgeyBjb2xvcjojNDI4NWY0OyB9IC5Db2xvclNjaGVtZS1OZXV0cmFsVGV4dCB7IGNvbG9yOiNmZjk4MDA7IH0gLkNvbG9yU2NoZW1lLVBvc2l0aXZlVGV4dCB7IGNvbG9yOiM0Y2FmNTA7IH0gLkNvbG9yU2NoZW1lLU5lZ2F0aXZlVGV4dCB7IGNvbG9yOiNmNDQzMzY7IH0KICA8L3N0eWxlPgogPC9kZWZzPgogPHBhdGggc3R5bGU9ImZpbGw6Y3VycmVudENvbG9yIiBjbGFzcz0iQ29sb3JTY2hlbWUtVGV4dCIgZD0iTSA3IDEgTCA3IDUgTCA0IDUgTCA0IDggTCAxMyA4IEwgMTMgNSBMIDEwIDUgTCAxMCAxIEwgNyAxIHogTSA0IDkgQyA0IDExLjc2MSAzLjEwNDYgMTUgMiAxNSBMIDExIDE1IEMgMTIuMTA1IDE1IDEzIDExLjc2MSAxMyA5IEwgNCA5IHoiLz4KPC9zdmc+Cg=="
+b64_prev = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDE2IDE2Ij4KIDxkZWZzPgogIDxzdHlsZSBpZD0iY3VycmVudC1jb2xvci1zY2hlbWUiIHR5cGU9InRleHQvY3NzIj4KICAgLkNvbG9yU2NoZW1lLVRleHQgeyBjb2xvcjojNDQ0NDQ0OyB9IC5Db2xvclNjaGVtZS1IaWdobGlnaHQgeyBjb2xvcjojNDI4NWY0OyB9IC5Db2xvclNjaGVtZS1OZXV0cmFsVGV4dCB7IGNvbG9yOiNmZjk4MDA7IH0gLkNvbG9yU2NoZW1lLVBvc2l0aXZlVGV4dCB7IGNvbG9yOiM0Y2FmNTA7IH0gLkNvbG9yU2NoZW1lLU5lZ2F0aXZlVGV4dCB7IGNvbG9yOiNmNDQzMzY7IH0KICA8L3N0eWxlPgogPC9kZWZzPgogPHBhdGggc3R5bGU9ImZpbGw6Y3VycmVudENvbG9yIiBjbGFzcz0iQ29sb3JTY2hlbWUtVGV4dCIgZD0iTSAwIDQgTCAwIDEyIEwgMiAxMiBMIDIgOCBMIDIgNCBMIDAgNCB6IE0gMiA4IEwgOSAxMiBMIDkgOCBMIDkgNCBMIDIgOCB6IE0gOSA4IEwgMTYgMTIgTCAxNiA0IEwgOSA4IHoiLz4KPC9zdmc+Cg=="
+b64_play = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmVyc2lvbj0iMS4xIj4KIDxkZWZzPgogIDxzdHlsZSBpZD0iY3VycmVudC1jb2xvci1zY2hlbWUiIHR5cGU9InRleHQvY3NzIj4KICAgLkNvbG9yU2NoZW1lLVRleHQgeyBjb2xvcjojNDQ0NDQ0OyB9IC5Db2xvclNjaGVtZS1IaWdobGlnaHQgeyBjb2xvcjojNDI4NWY0OyB9IC5Db2xvclNjaGVtZS1OZXV0cmFsVGV4dCB7IGNvbG9yOiNmZjk4MDA7IH0gLkNvbG9yU2NoZW1lLVBvc2l0aXZlVGV4dCB7IGNvbG9yOiM0Y2FmNTA7IH0gLkNvbG9yU2NoZW1lLU5lZ2F0aXZlVGV4dCB7IGNvbG9yOiNmNDQzMzY7IH0KICA8L3N0eWxlPgogPC9kZWZzPgogPHBhdGggc3R5bGU9ImZpbGw6Y3VycmVudENvbG9yIiBjbGFzcz0iQ29sb3JTY2hlbWUtVGV4dCIgZD0iTSAzLDIgViAxNCBMIDE0LDggWiIvPgo8L3N2Zz4K"
+b64_next = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDE2IDE2Ij4KIDxkZWZzPgogIDxzdHlsZSBpZD0iY3VycmVudC1jb2xvci1zY2hlbWUiIHR5cGU9InRleHQvY3NzIj4KICAgLkNvbG9yU2NoZW1lLVRleHQgeyBjb2xvcjojNDQ0NDQ0OyB9IC5Db2xvclNjaGVtZS1IaWdobGlnaHQgeyBjb2xvcjojNDI4NWY0OyB9IC5Db2xvclNjaGVtZS1OZXV0cmFsVGV4dCB7IGNvbG9yOiNmZjk4MDA7IH0gLkNvbG9yU2NoZW1lLVBvc2l0aXZlVGV4dCB7IGNvbG9yOiM0Y2FmNTA7IH0gLkNvbG9yU2NoZW1lLU5lZ2F0aXZlVGV4dCB7IGNvbG9yOiNmNDQzMzY7IH0KICA8L3N0eWxlPgogPC9kZWZzPgogPHBhdGggc3R5bGU9ImZpbGw6Y3VycmVudENvbG9yIiBjbGFzcz0iQ29sb3JTY2hlbWUtVGV4dCIgZD0iTSAwIDQgTCAwIDEyIEwgNyA4IEwgMCA0IHogTSA3IDggTCA3IDEyIEwgMTQgOCBMIDcgNCBMIDcgOCB6IE0gMTQgOCBMIDE0IDEyIEwgMTYgMTIgTCAxNiA0IEwgMTQgNCBMIDE0IDggeiIvPgo8L3N2Zz4K"
+b64_stop = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDE2IDE2Ij4KIDxkZWZzPgogIDxzdHlsZSBpZD0iY3VycmVudC1jb2xvci1zY2hlbWUiIHR5cGU9InRleHQvY3NzIj4KICAgLkNvbG9yU2NoZW1lLVRleHQgeyBjb2xvcjojNDQ0NDQ0OyB9IC5Db2xvclNjaGVtZS1IaWdobGlnaHQgeyBjb2xvcjojNDI4NWY0OyB9IC5Db2xvclNjaGVtZS1OZXV0cmFsVGV4dCB7IGNvbG9yOiNmZjk4MDA7IH0gLkNvbG9yU2NoZW1lLVBvc2l0aXZlVGV4dCB7IGNvbG9yOiM0Y2FmNTA7IH0gLkNvbG9yU2NoZW1lLU5lZ2F0aXZlVGV4dCB7IGNvbG9yOiNmNDQzMzY7IH0KICA8L3N0eWxlPgogPC9kZWZzPgogPHBhdGggc3R5bGU9ImZpbGw6Y3VycmVudENvbG9yIiBjbGFzcz0iQ29sb3JTY2hlbWUtVGV4dCIgZD0iTSAyIDIgTCAyIDE0IEwgMTQgMTQgTCAxNCAyIEwgMiAyIHoiLz4KPC9zdmc+Cg=="
+b64_normal = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmVyc2lvbj0iMS4xIj4KIDxkZWZzPgogIDxzdHlsZSBpZD0iY3VycmVudC1jb2xvci1zY2hlbWUiIHR5cGU9InRleHQvY3NzIj4KICAgLkNvbG9yU2NoZW1lLVRleHQgeyBjb2xvcjojNDQ0NDQ0OyB9IC5Db2xvclNjaGVtZS1IaWdobGlnaHQgeyBjb2xvcjojNDI4NWY0OyB9IC5Db2xvclNjaGVtZS1OZXV0cmFsVGV4dCB7IGNvbG9yOiNmZjk4MDA7IH0gLkNvbG9yU2NoZW1lLVBvc2l0aXZlVGV4dCB7IGNvbG9yOiM0Y2FmNTA7IH0gLkNvbG9yU2NoZW1lLU5lZ2F0aXZlVGV4dCB7IGNvbG9yOiNmNDQzMzY7IH0KICA8L3N0eWxlPgogPC9kZWZzPgogPHBhdGggc3R5bGU9ImZpbGw6Y3VycmVudENvbG9yIiBjbGFzcz0iQ29sb3JTY2hlbWUtVGV4dCIgZD0iTSAxMSwxIFYgMyBIIDEgViA1IEggMTEgViA3IEwgMTUsNCBaIE0gMTEsOSBWIDExIEggMSBWIDEzIEggMTEgViAxNSBMIDE1LDEyIFoiLz4KPC9zdmc+Cg=="
+b64_repeat = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmVyc2lvbj0iMS4xIj4KIDxkZWZzPgogIDxzdHlsZSBpZD0iY3VycmVudC1jb2xvci1zY2hlbWUiIHR5cGU9InRleHQvY3NzIj4KICAgLkNvbG9yU2NoZW1lLVRleHQgeyBjb2xvcjojNDQ0NDQ0OyB9IC5Db2xvclNjaGVtZS1IaWdobGlnaHQgeyBjb2xvcjojNDI4NWY0OyB9IC5Db2xvclNjaGVtZS1OZXV0cmFsVGV4dCB7IGNvbG9yOiNmZjk4MDA7IH0gLkNvbG9yU2NoZW1lLVBvc2l0aXZlVGV4dCB7IGNvbG9yOiM0Y2FmNTA7IH0gLkNvbG9yU2NoZW1lLU5lZ2F0aXZlVGV4dCB7IGNvbG9yOiNmNDQzMzY7IH0KICA8L3N0eWxlPgogPC9kZWZzPgogPHBhdGggc3R5bGU9ImZpbGw6Y3VycmVudENvbG9yIiBjbGFzcz0iQ29sb3JTY2hlbWUtVGV4dCIgZD0iTSA2LDEgViAzIEggNCBDIDIuMzM4LDMgMSw0LjMzOCAxLDYgViAxMCBDIDEsMTEuNjYyIDIuMzM4LDEzIDQsMTMgSCAxMiBDIDEzLjY2MiwxMyAxNSwxMS42NjIgMTUsMTAgViA2IEMgMTUsNC4zMzggMTMuNjYyLDMgMTIsMyBIIDExIFYgNSBIIDEyIEMgMTIuNTU0LDUgMTMsNS40NDYgMTMsNiBWIDEwIEMgMTMsMTAuNTU0IDEyLjU1NCwxMSAxMiwxMSBIIDQgQyAzLjQ0NiwxMSAzLDEwLjU1NCAzLDEwIFYgNiBDIDMsNS40NDYgMy40NDYsNSA0LDUgSCA2IFYgNyBMIDEwLDQgWiIvPgo8L3N2Zz4K"
+b64_repeat_song = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmVyc2lvbj0iMS4xIj4KIDxkZWZzPgogIDxzdHlsZSBpZD0iY3VycmVudC1jb2xvci1zY2hlbWUiIHR5cGU9InRleHQvY3NzIj4KICAgLkNvbG9yU2NoZW1lLVRleHQgeyBjb2xvcjojNDQ0NDQ0OyB9IC5Db2xvclNjaGVtZS1IaWdobGlnaHQgeyBjb2xvcjojNDI4NWY0OyB9IC5Db2xvclNjaGVtZS1OZXV0cmFsVGV4dCB7IGNvbG9yOiNmZjk4MDA7IH0gLkNvbG9yU2NoZW1lLVBvc2l0aXZlVGV4dCB7IGNvbG9yOiM0Y2FmNTA7IH0gLkNvbG9yU2NoZW1lLU5lZ2F0aXZlVGV4dCB7IGNvbG9yOiNmNDQzMzY7IH0KICA8L3N0eWxlPgogPC9kZWZzPgogPHBhdGggc3R5bGU9ImZpbGw6Y3VycmVudENvbG9yIiBjbGFzcz0iQ29sb3JTY2hlbWUtVGV4dCIgZD0iTSAxMS41LDggQyA5LjU3LDggOCw5LjU3IDgsMTEuNSA4LDEzLjQzIDkuNTcsMTUgMTEuNSwxNSAxMy40MywxNSAxNSwxMy40MyAxNSwxMS41IDE1LDkuNTcgMTMuNDMsOCAxMS41LDggWiBNIDExLDkgSCAxMiBWIDE0IEggMTEgViAxMC41IEggMTAgViAxMCBDIDExLDEwIDExLDkgMTEsOSBaIi8+CiA8cGF0aCBzdHlsZT0iZmlsbDpjdXJyZW50Q29sb3IiIGNsYXNzPSJDb2xvclNjaGVtZS1UZXh0IiBkPSJNIDYgMSBMIDYgMyBMIDQgMyBDIDIuMzM4IDMgMSA0LjMzOCAxIDYgTCAxIDEwIEMgMSAxMS42NjIgMi4zMzggMTMgNCAxMyBMIDcuMjYzNyAxMyBBIDQuNSA0LjUgMCAwIDEgNyAxMS41IEEgNC41IDQuNSAwIDAgMSA3LjAzMTIgMTEgTCA0IDExIEMgMy40NDYgMTEgMyAxMC41NTQgMyAxMCBMIDMgNiBDIDMgNS40NDYgMy40NDYgNSA0IDUgTCA2IDUgTCA2IDcgTCAxMCA0IEwgNiAxIHogTSAxMSAzIEwgMTEgNSBMIDEyIDUgQyAxMi41NTQgNSAxMyA1LjQ0NiAxMyA2IEwgMTMgNy4yNjM3IEEgNC41IDQuNSAwIDAgMSAxNSA4LjY3MzggTCAxNSA2IEMgMTUgNC4zMzggMTMuNjYyIDMgMTIgMyBMIDExIDMgeiIvPgo8L3N2Zz4K"
+b64_shuffle = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmVyc2lvbj0iMS4xIj4KIDxkZWZzPgogIDxzdHlsZSBpZD0iY3VycmVudC1jb2xvci1zY2hlbWUiIHR5cGU9InRleHQvY3NzIj4KICAgLkNvbG9yU2NoZW1lLVRleHQgeyBjb2xvcjojNDQ0NDQ0OyB9IC5Db2xvclNjaGVtZS1IaWdobGlnaHQgeyBjb2xvcjojNDI4NWY0OyB9IC5Db2xvclNjaGVtZS1OZXV0cmFsVGV4dCB7IGNvbG9yOiNmZjk4MDA7IH0gLkNvbG9yU2NoZW1lLVBvc2l0aXZlVGV4dCB7IGNvbG9yOiM0Y2FmNTA7IH0gLkNvbG9yU2NoZW1lLU5lZ2F0aXZlVGV4dCB7IGNvbG9yOiNmNDQzMzY7IH0KICA8L3N0eWxlPgogPC9kZWZzPgogPHBhdGggc3R5bGU9ImZpbGw6Y3VycmVudENvbG9yIiBjbGFzcz0iQ29sb3JTY2hlbWUtVGV4dCIgZD0iTSAxMywxMyBWIDExIEggOSBDIDguNDQ2LDExIDgsMTAuNTUgOCwxMCBWIDYgQyA4LDQuMzQgNi42NjIsMyA1LDMgSCAxIFYgNSBIIDUgQyA1LjU1NCw1IDYsNS40NSA2LDYgViAxMCBDIDYsMTEuNjYgNy4zMzgsMTMgOSwxMyBaIi8+CiA8cGF0aCBzdHlsZT0iZmlsbDpjdXJyZW50Q29sb3IiIGNsYXNzPSJDb2xvclNjaGVtZS1UZXh0IiBkPSJNIDEzLDMgViA1IEggOS4zNzcgQyA5LjIwOCw0LjI3MDIgOC44NTM4LDMuNjE1NiA4LjM3NSwzLjA2NjQgOC41NzY5LDMuMDIzOCA4Ljc4NTEsMyA5LDMgWiBNIDQuNjIzLDExIEMgNC43OTIsMTEuNzMgNS4xNDYsMTIuMzg0IDUuNjI1LDEyLjkzNCA1LjQyMywxMi45NzYgNS4yMTUsMTMgNSwxMyBIIDEgViAxMSBaIi8+CiA8cGF0aCBzdHlsZT0iZmlsbDpjdXJyZW50Q29sb3IiIGNsYXNzPSJDb2xvclNjaGVtZS1UZXh0IiBkPSJNIDEyLDEgViA3IEwgMTYsNCBaIi8+CiA8cGF0aCBzdHlsZT0iZmlsbDpjdXJyZW50Q29sb3IiIGNsYXNzPSJDb2xvclNjaGVtZS1UZXh0IiBkPSJNIDEyLDkgViAxNSBMIDE2LDEyIFoiLz4KPC9zdmc+Cg=="
+b64_pause = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDE2IDE2Ij4KIDxkZWZzPgogIDxzdHlsZSBpZD0iY3VycmVudC1jb2xvci1zY2hlbWUiIHR5cGU9InRleHQvY3NzIj4KICAgLkNvbG9yU2NoZW1lLVRleHQgeyBjb2xvcjojNDQ0NDQ0OyB9IC5Db2xvclNjaGVtZS1IaWdobGlnaHQgeyBjb2xvcjojNDI4NWY0OyB9IC5Db2xvclNjaGVtZS1OZXV0cmFsVGV4dCB7IGNvbG9yOiNmZjk4MDA7IH0gLkNvbG9yU2NoZW1lLVBvc2l0aXZlVGV4dCB7IGNvbG9yOiM0Y2FmNTA7IH0gLkNvbG9yU2NoZW1lLU5lZ2F0aXZlVGV4dCB7IGNvbG9yOiNmNDQzMzY7IH0KICA8L3N0eWxlPgogPC9kZWZzPgogPHBhdGggc3R5bGU9ImZpbGw6Y3VycmVudENvbG9yIiBjbGFzcz0iQ29sb3JTY2hlbWUtVGV4dCIgZD0iTSAyIDIgTCAyIDE0IEwgNiAxNCBMIDYgMiBMIDIgMiB6IE0gMTAgMiBMIDEwIDE0IEwgMTQgMTQgTCAxNCAyIEwgMTAgMiB6Ii8+Cjwvc3ZnPgo="
+b64_icon = "PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZlcnNpb249IjEuMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KIDxyZWN0IHg9IjQiIHk9IjUiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcng9IjYiIHN0eWxlPSJvcGFjaXR5Oi4yIi8+CiA8cmVjdCB4PSI0IiB5PSI0IiB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSI2IiBzdHlsZT0iZmlsbDojZDMyZjJmIi8+CiA8cGF0aCBkPSJtMzMuNzY1NjI1IDEyLjMwNjY0MWMtMC4xMDA4MjMgMC4wMDE0LTAuMjA1NDM4IDAuMDEzMzItMC4zMTI1IDAuMDM3MTFsLTE0LjkwNjI1IDMuMzEyNWMtMC44NTY0OTMgMC4xOTAzMzEtMS41NDY4NzUgMS4wNTAzNDgtMS41NDY4NzUgMS45Mjc3MzN2MTEuNjczODI4YTQuNSA0LjUgMCAwIDAtMS41LTAuMjU3ODEyIDQuNSA0LjUgMCAwIDAtNC41IDQuNSA0LjUgNC41IDAgMCAwIDQuNSA0LjUgNC41IDQuNSAwIDAgMCA0LjUtNC41di0xMy4xNjYwMTZsMTItMi42Njc5Njh2OC41OTE3OTZhNC41IDQuNSAwIDAgMC0xLjUtMC4yNTc4MTIgNC41IDQuNSAwIDAgMC00LjUgNC41IDQuNSA0LjUgMCAwIDAgNC41IDQuNSA0LjUgNC41IDAgMCAwIDQuNS00LjV2LTE2LjkxNjAxNmMwLTAuNzY3NzEyLTAuNTI4NjEzLTEuMjg2OTg1LTEuMjM0Mzc1LTEuMjc3MzQzeiIgc3R5bGU9Im9wYWNpdHk6LjIiLz4KIDxwYXRoIGQ9Im0zMy43NjU2MjUgMTEuMzA3MTMyYy0wLjEwMDgyMyAwLjAwMTQtMC4yMDU0MzggMC4wMTMzMi0wLjMxMjUgMC4wMzcxMWwtMTQuOTA2MjUgMy4zMTI1Yy0wLjg1NjQ5MyAwLjE5MDMzMS0xLjU0Njg3NSAxLjA1MDM0OC0xLjU0Njg3NSAxLjkyNzczM3YxMS42NzM4MjhhNC41IDQuNSAwIDAgMC0xLjUtMC4yNTc4MTIgNC41IDQuNSAwIDAgMC00LjUgNC41IDQuNSA0LjUgMCAwIDAgNC41IDQuNSA0LjUgNC41IDAgMCAwIDQuNS00LjV2LTEzLjE2NjAxNmwxMi0yLjY2Nzk2OHY4LjU5MTc5NmE0LjUgNC41IDAgMCAwLTEuNS0wLjI1NzgxMiA0LjUgNC41IDAgMCAwLTQuNSA0LjUgNC41IDQuNSAwIDAgMCA0LjUgNC41IDQuNSA0LjUgMCAwIDAgNC41LTQuNXYtMTYuOTE2MDE2YzAtMC43Njc3MTItMC41Mjg2MTMtMS4yODY5ODUtMS4yMzQzNzUtMS4yNzczNDN6IiBzdHlsZT0iZmlsbDojZmZmZmZmIi8+CiA8cGF0aCBkPSJtMTAgNGMtMy4zMjQgMC02IDIuNjc2LTYgNnYxYzAtMy4zMjQgMi42NzYtNiA2LTZoMjhjMy4zMjQgMCA2IDIuNjc2IDYgNnYtMWMwLTMuMzI0LTIuNjc2LTYtNi02eiIgc3R5bGU9ImZpbGw6I2ZmZmZmZjtvcGFjaXR5Oi4yIi8+Cjwvc3ZnPgo="
+
+def svg_to_b64(b64):
+    data = base64.b64decode(b64)
+    stream = Gio.MemoryInputStream.new_from_data(data)
+    pixbuf = GdkPixbuf.Pixbuf.new_from_stream_at_scale(stream,16,16,True)
+    icon = Gtk.Image.new_from_pixbuf(pixbuf)
+    return icon
 
 class LrcParser:
     """增强版LRC歌词解析器"""
@@ -87,7 +109,11 @@ class MusicPlayer(Gtk.Window):
         super().__init__(title='铺音乐播放器')
         self.set_default_size(1000, 600)
         self.set_border_width(10)  # 关键修改：窗口内边距设为10
-        self.set_icon_name("folder-music-symbolic")
+        loader = GdkPixbuf.PixbufLoader.new()
+        loader.write(base64.b64decode(b64_icon))
+        loader.close()
+        self.set_icon(loader.get_pixbuf())  # 直接设置图标
+        #self.set_icon_name("folder-music-symbolic")
 
         # 核心状态
         self.playlist = []          # 播放列表 [(文件路径, 歌曲名, 时长秒数), ...]
@@ -100,7 +126,7 @@ class MusicPlayer(Gtk.Window):
         
         # 播放模式：0-顺序 1-循环 2-单曲循环 3-随机
         self.play_mode = 0
-        self.mode_labels = [{'顺序播放':'media-playlist-consecutive-symbolic'}, {'循环播放':'media-playlist-repeat-symbolic'}, {'单曲循环':'media-playlist-repeat-song-symbolic'}, {'随机播放':'media-playlist-shuffle-symbolic'}]
+        self.mode_labels = [{'顺序播放':b64_normal}, {'循环播放':b64_repeat}, {'单曲循环':b64_repeat_song}, {'随机播放':b64_shuffle}]
         # 新增：播放模式按钮引用
         self.mode_buttons = []
         
@@ -207,19 +233,22 @@ class MusicPlayer(Gtk.Window):
         playlist_ctrl = Gtk.Box(spacing=3)
         btn_add = Gtk.Button()
         btn_add.set_tooltip_text("添加歌曲")
-        icon = Gtk.Image.new_from_icon_name("list-add-symbolic", Gtk.IconSize.BUTTON)
+        icon = svg_to_b64(b64_add)
+        #icon = Gtk.Image.new_from_icon_name("list-add-symbolic", Gtk.IconSize.BUTTON)
         btn_add.set_image(icon)
         btn_add.set_always_show_image(True)  # 让图标居中显示
 
         btn_remove = Gtk.Button()
         btn_remove.set_tooltip_text("删除歌曲")
-        icon = Gtk.Image.new_from_icon_name("list-remove-symbolic", Gtk.IconSize.BUTTON)
+        icon = svg_to_b64(b64_remove)
+        #icon = Gtk.Image.new_from_icon_name("list-remove-symbolic", Gtk.IconSize.BUTTON)
         btn_remove.set_image(icon)
         btn_remove.set_always_show_image(True)  # 让图标居中显示
 
         btn_clear = Gtk.Button()
         btn_clear.set_tooltip_text("清空列表")
-        icon = Gtk.Image.new_from_icon_name("media-removable-symbolic", Gtk.IconSize.BUTTON)
+        icon = svg_to_b64(b64_clear)
+        #icon = Gtk.Image.new_from_icon_name("media-removable-symbolic", Gtk.IconSize.BUTTON)
         btn_clear.set_image(icon)
         btn_clear.set_always_show_image(True)  # 让图标居中显示
 
@@ -291,7 +320,8 @@ class MusicPlayer(Gtk.Window):
             btn = Gtk.Button()
             (key, value), = tooltip.items()
             btn.set_tooltip_text(key)
-            icon = Gtk.Image.new_from_icon_name(value, Gtk.IconSize.BUTTON)
+            icon = svg_to_b64(value)
+            #icon = Gtk.Image.new_from_icon_name(value, Gtk.IconSize.BUTTON)
             btn.set_image(icon)
             btn.set_always_show_image(True)  # 让图标居中显示
             btn.connect('clicked', self.on_mode_button_click, i)
@@ -321,25 +351,29 @@ class MusicPlayer(Gtk.Window):
         # 播放控制按钮
         self.btn_prev = Gtk.Button()
         self.btn_prev.set_tooltip_text("上一曲")
-        icon = Gtk.Image.new_from_icon_name("media-skip-backward-symbolic", Gtk.IconSize.BUTTON)
+        icon = svg_to_b64(b64_prev)
+        #icon = Gtk.Image.new_from_icon_name("media-skip-backward-symbolic", Gtk.IconSize.BUTTON)
         self.btn_prev.set_image(icon)
         self.btn_prev.set_always_show_image(True)  # 让图标居中显示
 
         self.btn_play = Gtk.Button()
-        self.btn_play.set_tooltip_text("播放")
-        icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON)
+        self.btn_play.set_tooltip_text("播放")        
+        icon = svg_to_b64(b64_play)
+        #icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON)
         self.btn_play.set_image(icon)
         self.btn_play.set_always_show_image(True)  # 让图标居中显示
 
         self.btn_next = Gtk.Button()
         self.btn_next.set_tooltip_text("下一曲")
-        icon = Gtk.Image.new_from_icon_name("media-skip-forward-symbolic", Gtk.IconSize.BUTTON)
+        icon = svg_to_b64(b64_next)
+        #icon = Gtk.Image.new_from_icon_name("media-skip-forward-symbolic", Gtk.IconSize.BUTTON)
         self.btn_next.set_image(icon)
         self.btn_next.set_always_show_image(True)  # 让图标居中显示
 
         self.btn_stop = Gtk.Button()
         self.btn_stop.set_tooltip_text("停止")
-        icon = Gtk.Image.new_from_icon_name("media-playback-stop-symbolic", Gtk.IconSize.BUTTON)
+        icon = svg_to_b64(b64_stop)
+        #icon = Gtk.Image.new_from_icon_name("media-playback-stop-symbolic", Gtk.IconSize.BUTTON)
         self.btn_stop.set_image(icon)
         self.btn_stop.set_always_show_image(True)  # 让图标居中显示
 
@@ -411,7 +445,7 @@ class MusicPlayer(Gtk.Window):
             self.random_playlist = []
             self.random_index = -1
             
-        print(f"切换播放模式: {self.mode_labels[self.play_mode]}")
+        print(f"切换播放模式: {list(self.mode_labels[self.play_mode])[0]}")
 
     # 更新播放模式按钮样式
     def update_mode_buttons_style(self):
@@ -445,7 +479,8 @@ class MusicPlayer(Gtk.Window):
                 self.load_song(idx)
                 self.play_flag = True
                 self.btn_play.set_tooltip_text("暂停")
-                icon = Gtk.Image.new_from_icon_name("media-playback-pause-symbolic", Gtk.IconSize.BUTTON)
+                icon = svg_to_b64(b64_pause)
+                #icon = Gtk.Image.new_from_icon_name("media-playback-pause-symbolic", Gtk.IconSize.BUTTON)
                 self.btn_play.set_image(icon)
                 # 延迟启动播放，等待时长加载
                 GLib.idle_add(self.delayed_play)
@@ -712,7 +747,8 @@ class MusicPlayer(Gtk.Window):
             self.player.set_state(Gst.State.READY)
             self.play_flag = False
             self.btn_play.set_tooltip_text("播放")
-            icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON)
+            icon = svg_to_b64(b64_play)
+            #icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON)
             self.btn_play.set_image(icon)
 
         # 从播放列表中删除对应条目
@@ -759,7 +795,8 @@ class MusicPlayer(Gtk.Window):
         self.play_flag = False
         self.player.set_state(Gst.State.READY)
         self.btn_play.set_tooltip_text("播放")
-        icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON)
+        icon = svg_to_b64(b64_play)
+        #icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON)
         self.btn_play.set_image(icon)
         self.reset_lrc_display()
         self.label_duration.set_label('--:-- / --:--')  # 恢复占位符
@@ -828,13 +865,15 @@ class MusicPlayer(Gtk.Window):
                 self.player.set_state(Gst.State.PLAYING)
                 self.play_flag = True
                 self.btn_play.set_tooltip_text("暂停")
-                icon = Gtk.Image.new_from_icon_name("media-playback-pause-symbolic", Gtk.IconSize.BUTTON)
+                icon = svg_to_b64(b64_pause)
+                #icon = Gtk.Image.new_from_icon_name("media-playback-pause-symbolic", Gtk.IconSize.BUTTON)
                 self.btn_play.set_image(icon)
             else:
                 self.player.set_state(Gst.State.PAUSED)
                 self.play_flag = False
                 self.btn_play.set_tooltip_text("播放")
-                icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON)
+                icon = svg_to_b64(b64_play)
+                #icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON)
                 self.btn_play.set_image(icon)
         self.update_current_song_display()
 
@@ -843,7 +882,8 @@ class MusicPlayer(Gtk.Window):
         self.player.set_state(Gst.State.READY)
         self.play_flag = False
         self.btn_play.set_tooltip_text("播放")
-        icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON)
+        icon = svg_to_b64(b64_play)
+        #icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON)
         self.btn_play.set_image(icon)
         self.curr_pos = 0.0
         self.scale.set_value(0)
