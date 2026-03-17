@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # coding=utf-8
 
-# Depends: python3-gi-cairo gir1.2-gtk-3.0 gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly gir1.2-gst-plugins-base-1.0 gir1.2-gstreamer-1.0 libgssdp-1.6-0 libgstreamer-plugins-bad1.0-0 libgupnp-1.6-0 libgupnp-igd-1.6-0 libva-drm2 libva2 python3-gst-1.0 python3-typing-extensions adwaita-icon-theme 
+# Depends: python3-gi python3-gi-cairo gir1.2-gtk-3.0 gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly gir1.2-gst-plugins-base-1.0 gir1.2-gstreamer-1.0 libgssdp-1.6-0 libgstreamer-plugins-bad1.0-0 libgupnp-1.6-0 libgupnp-igd-1.6-0 libva-drm2 libva2 python3-gst-1.0 python3-typing-extensions adwaita-icon-theme
 
 import gi
 import random
@@ -87,6 +87,7 @@ class MusicPlayer(Gtk.Window):
         super().__init__(title='铺音乐播放器')
         self.set_default_size(1000, 600)
         self.set_border_width(10)  # 关键修改：窗口内边距设为10
+        self.set_icon_name("folder-music-symbolic")
 
         # 核心状态
         self.playlist = []          # 播放列表 [(文件路径, 歌曲名, 时长秒数), ...]
@@ -165,13 +166,6 @@ class MusicPlayer(Gtk.Window):
         playing_box.set_border_width(0)
         playing_box.set_halign(Gtk.Align.START)  # 左对齐
         playing_box.set_size_request(-1, 40)     # 固定高度
-        
-        # 标题标签
-        # title_label = Gtk.Label()
-        # title_label.set_markup('<span weight="bold" size="large">当前播放：</span>')
-        # title_label.set_xalign(1.0)  # 右对齐
-        # title_label.set_size_request(300, -1)
-        # playing_box.pack_start(title_label, False, False, 0)
         
         # 当前歌曲显示标签（核心）
         self.current_song_label = Gtk.Label()

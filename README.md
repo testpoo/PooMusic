@@ -4,10 +4,28 @@
 
 ### 依赖
 ```
-python3-gi-cairo gir1.2-gtk-3.0 gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly gir1.2-gst-plugins-base-1.0 gir1.2-gstreamer-1.0 libgssdp-1.6-0 libgstreamer-plugins-bad1.0-0 libgupnp-1.6-0 libgupnp-igd-1.6-0 libva-drm2 libva2 python3-gst-1.0 python3-typing-extensions adwaita-icon-theme
+# Python GTK 核心组
+python3-gi-cairo
+gir1.2-gtk-3.0
+adwaita-icon-theme
+
+# GStreamer 多媒体组（音视频）
+python3-gst-1.0
+gstreamer1.0-plugins-good
+gstreamer1.0-plugins-ugly
+
+# UPnP / 网络播放组
+libgupnp-igd-1.6-0
+
+# VA-API 硬件加速（视频硬解）
+libva-drm2
+libva2
 ```
 
 ### 运行
 ```
 python3 PooMusic.py
 ```
+
+### 展示
+![PooMusic](PooMusic.png)
