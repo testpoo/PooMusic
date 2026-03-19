@@ -7,12 +7,13 @@ import gi
 import random
 gi.require_version('Gtk', '3.0')
 gi.require_version('Gst', '1.0')
-from gi.repository import Gtk, Gst, GLib, GObject
+from gi.repository import Gtk, Gst, GLib, GObject, Gdk, GdkPixbuf, Gio
 import os
 import re
 import pathlib
 import threading
 from mutagen import File
+import cairo
 
 # 初始化GStreamer
 Gst.init(None)
@@ -130,17 +131,29 @@ class MusicPlayer(Gtk.Window):
         # 定时器刷新UI（300ms一次）
         GLib.timeout_add(300, self.update_ui)
 
+    # 清理背景
+    def clear_widget_bg(self, widget):
+        css = f"* {{ background-color: transparent; }}"
+        provider = Gtk.CssProvider()
+        provider.load_from_data(css.encode())
+        widget.get_style_context().add_provider(provider, 600)
+
     def build_ui(self):
         """构建完整UI布局"""
         # 主布局：外层垂直布局（顶部播放状态 + 主体内容）
         self.main_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)  # 无间距
         self.main_vbox.set_border_width(0)  # 无内边距
         self.add(self.main_vbox)
+        css = f"* {{ background-color: rgba(255, 255, 255, 0.9) }}"
+        provider = Gtk.CssProvider()
+        provider.load_from_data(css.encode())
+        self.main_vbox.get_style_context().add_provider(provider, 600)
         
         # 主体内容：播放列表(左) + 右侧内容(右) - 关键：先放主体，再放顶部播放状态
         self.content_hbox = Gtk.Box(spacing=8)  # 仅左右间距
         self.content_hbox.set_border_width(0)
         self.main_vbox.pack_start(self.content_hbox, True, True, 0)
+        self.clear_widget_bg(self.content_hbox)
 
         # 左侧播放列表区域 + 当前播放 + 控制栏 - 完全置顶
         self.build_playlist_area(self.content_hbox)
@@ -150,6 +163,7 @@ class MusicPlayer(Gtk.Window):
         self.right_vbox.set_size_request(300, -1)  # 固定宽度
         self.right_vbox.set_border_width(0)
         self.content_hbox.pack_start(self.right_vbox, True, True, 0)
+        self.clear_widget_bg(self.right_vbox)
 
         # 右侧主内容区域（歌词区）
         self.build_lrc_area(self.right_vbox)
@@ -157,11 +171,12 @@ class MusicPlayer(Gtk.Window):
     def build_playlist_area(self, parent):
         """构建左侧播放列表 - 完全置顶，无任何顶部空白"""
         # 播放列表容器 - 无任何间距和内边距
-        self.playlist_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        self.playlist_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         self.playlist_box.set_size_request(300, -1)  # 固定宽度
         self.playlist_box.set_border_width(0)
         self.playlist_box.set_vexpand(True)  # 垂直扩展填满空间
         parent.pack_start(self.playlist_box, False, False, 0)
+        self.clear_widget_bg(self.playlist_box)
 
         # 播放列表标题 + 加载状态 - 无间距
         self.playing_box = Gtk.Box(spacing=3)
@@ -278,33 +293,15 @@ class MusicPlayer(Gtk.Window):
         self.scrolled_playlist.set_vexpand(True)  # 垂直扩展
         self.playlist_box.pack_start(self.scrolled_playlist, True, True, 0)
 
+        self.clear_widget_bg(self.scrolled_playlist)
+
         # 播放列表TreeView
         self.playlist_store = Gtk.ListStore(str, str, float)
         self.playlist_view = Gtk.TreeView(model=self.playlist_store)
         self.playlist_view.set_headers_visible(False)
         self.playlist_view.set_border_width(0)
-        
-        # 移除选中背景样式
-        self.playlist_view.set_can_focus(False)
-        self.playlist_view.set_hover_selection(False)
-        style_provider = Gtk.CssProvider()
-        css = """
-        GtkTreeView {
-            background-color: transparent;
-        }
-        GtkTreeView:selected {
-            background-color: transparent;
-            color: inherit;
-        }
-        GtkTreeView row:selected {
-            background-color: transparent;
-            color: inherit;
-        }
-        """
-        style_provider.load_from_data(css.encode('utf-8'))
-        self.playlist_view.get_style_context().add_provider(
-            style_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-        )
+
+        self.clear_widget_bg(self.playlist_view)
 
         # 自定义单元格渲染器
         renderer_list = Gtk.CellRendererText()
@@ -381,11 +378,13 @@ class MusicPlayer(Gtk.Window):
         self.scrolled_lrc.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         self.scrolled_lrc.set_border_width(0)
         parent.pack_start(self.scrolled_lrc, True, True, 0)
+        self.clear_widget_bg(self.scrolled_lrc)
 
         # 歌词列表ListBox
         self.lrc_listbox = Gtk.ListBox()
         self.lrc_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
         self.scrolled_lrc.add(self.lrc_listbox)
+        self.clear_widget_bg(self.lrc_listbox)
 
         # 初始歌词提示
         self.reset_lrc_display()
@@ -471,6 +470,7 @@ class MusicPlayer(Gtk.Window):
                 # 延迟启动播放，等待时长加载
                 GLib.idle_add(self.delayed_play)
                 self.update_current_song_display()
+                self.add_background()
 
     def delayed_play(self):
         """延迟播放，确保时长先加载完成"""
@@ -601,7 +601,7 @@ class MusicPlayer(Gtk.Window):
         # 设置播放文件
         self.player.set_property('uri', f'file://{song_path}')
         self.label_duration.set_label(f"00:00 / {self.format_time(self.current_duration)}")
-        
+
         # 加载歌词
         base = os.path.splitext(song_path)[0]
         lrc_path = None
@@ -619,6 +619,28 @@ class MusicPlayer(Gtk.Window):
             GLib.idle_add(self.delayed_play)
         
         self.update_current_song_display()
+
+    # 给播放器加背景
+    def add_background(self):
+        self.main_vbox.queue_draw()
+        audio = File(self.playlist[self.current_song_idx][0])
+        if hasattr(audio,"pictures") and audio.pictures != []:
+            image_bytes = audio.pictures[0].data
+
+            # 从数据流生成 pixbuf
+            inp = Gio.MemoryInputStream.new_from_data(image_bytes)
+            pb = GdkPixbuf.Pixbuf.new_from_stream(inp, None)
+
+            # 直接给 box 画背景（核心就这一段）
+            def on_draw(widget, cr):
+                w = widget.get_allocated_width()
+                h = widget.get_allocated_height()
+                spb = pb.scale_simple(w, h, GdkPixbuf.InterpType.BILINEAR)
+                Gdk.cairo_set_source_pixbuf(cr, spb, 0, 0)
+                cr.paint()
+                
+                return False
+            self.main_vbox.connect("draw", on_draw)
 
     def on_add_song(self, widget):
         """手动添加歌曲到播放列表"""
@@ -755,6 +777,7 @@ class MusicPlayer(Gtk.Window):
                 
         self.load_song(self.current_song_idx)
         self.update_current_song_display()
+        self.add_background()
 
     def on_next_song(self, widget):
         """下一曲"""
@@ -781,6 +804,7 @@ class MusicPlayer(Gtk.Window):
                 
         self.load_song(self.current_song_idx)
         self.update_current_song_display()
+        self.add_background()
 
     def on_play(self, widget):
         """播放/暂停"""
@@ -802,6 +826,7 @@ class MusicPlayer(Gtk.Window):
                 icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON)
                 self.btn_play.set_image(icon)
         self.update_current_song_display()
+        self.add_background()
 
     def on_stop(self, widget):
         """停止播放（优化时长显示）"""
