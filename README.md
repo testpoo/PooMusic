@@ -20,6 +20,9 @@ libgupnp-igd-1.6-0
 # VA-API 硬件加速（视频硬解）
 libva-drm2
 libva2
+
+# 歌曲信息获取
+python3-mutagen
 ```
 
 ### 运行

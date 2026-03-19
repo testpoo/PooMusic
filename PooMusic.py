@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # coding=utf-8
 
-# Depends: python3-gi python3-gi-cairo gir1.2-gtk-3.0 gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly gir1.2-gst-plugins-base-1.0 gir1.2-gstreamer-1.0 libgssdp-1.6-0 libgstreamer-plugins-bad1.0-0 libgupnp-1.6-0 libgupnp-igd-1.6-0 libva-drm2 libva2 python3-gst-1.0 python3-typing-extensions adwaita-icon-theme
+# Depends: python3-gi python3-gi-cairo gir1.2-gtk-3.0 gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly gir1.2-gst-plugins-base-1.0 gir1.2-gstreamer-1.0 libgssdp-1.6-0 libgstreamer-plugins-bad1.0-0 libgupnp-1.6-0 libgupnp-igd-1.6-0 libva-drm2 libva2 python3-gst-1.0 python3-mutagen adwaita-icon-theme
 
 import gi
 import random
@@ -12,6 +12,7 @@ import os
 import re
 import pathlib
 import threading
+from mutagen import File
 
 # 初始化GStreamer
 Gst.init(None)
@@ -26,9 +27,6 @@ else:  # Linux/Mac系统（中文环境）
     # 备用路径（如果"音乐"文件夹不存在，尝试Music）
     if not os.path.exists(MUSIC_DIR):
         MUSIC_DIR = os.path.expanduser("~/Music")
-
-# 配置项：可选择是否快速加载（跳过时长获取）
-FAST_LOAD = True  # True=快速加载（无时长），False=精确时长（稍慢）
 
 class LrcParser:
     """增强版LRC歌词解析器"""
@@ -87,8 +85,8 @@ class LrcParser:
 class MusicPlayer(Gtk.Window):
     def __init__(self):
         super().__init__(title='铺音乐播放器')
-        self.set_default_size(1000, 600)
-        self.set_border_width(10)  # 关键修改：窗口内边距设为10
+        self.set_default_size(600, 600)
+        self.set_border_width(10)
         self.set_icon_name("folder-music-symbolic")
 
         # 核心状态
@@ -122,15 +120,12 @@ class MusicPlayer(Gtk.Window):
         self.lrc_listbox = None      # 歌词列表组件
         self.lrc_labels = []         # 歌词标签缓存
         self.current_lrc_index = -1  # 当前高亮歌词索引
-
-        # 新增：当前播放歌曲显示标签
-        self.current_song_label = None
         
         # 构建UI
         self.build_ui()
 
-        # 异步加载音乐文件夹歌曲（不阻塞UI）
-        self.load_music_folder_async()
+        # 加载音乐文件夹歌曲
+        self.load_music_folder()
 
         # 定时器刷新UI（300ms一次）
         GLib.timeout_add(300, self.update_ui)
@@ -138,115 +133,155 @@ class MusicPlayer(Gtk.Window):
     def build_ui(self):
         """构建完整UI布局"""
         # 主布局：外层垂直布局（顶部播放状态 + 主体内容）
-        main_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)  # 无间距
-        main_vbox.set_border_width(0)  # 无内边距
-        self.add(main_vbox)
+        self.main_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)  # 无间距
+        self.main_vbox.set_border_width(0)  # 无内边距
+        self.add(self.main_vbox)
         
         # 主体内容：播放列表(左) + 右侧内容(右) - 关键：先放主体，再放顶部播放状态
-        content_hbox = Gtk.Box(spacing=8)  # 仅左右间距
-        content_hbox.set_border_width(0)
-        main_vbox.pack_start(content_hbox, True, True, 0)
+        self.content_hbox = Gtk.Box(spacing=8)  # 仅左右间距
+        self.content_hbox.set_border_width(0)
+        self.main_vbox.pack_start(self.content_hbox, True, True, 0)
 
-        # 1. 左侧播放列表区域 - 完全置顶
-        self.build_playlist_area(content_hbox)
+        # 左侧播放列表区域 + 当前播放 + 控制栏 - 完全置顶
+        self.build_playlist_area(self.content_hbox)
 
-        # 2. 右侧内容容器（当前播放 + 控制栏 + 歌词区）
-        right_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        right_vbox.set_size_request(740, -1)  # 固定宽度（1000-250-8=742，取740）
-        right_vbox.set_border_width(0)
-        content_hbox.pack_start(right_vbox, True, True, 0)
+        # 右侧内容容器（歌词区）
+        self.right_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        self.right_vbox.set_size_request(300, -1)  # 固定宽度
+        self.right_vbox.set_border_width(0)
+        self.content_hbox.pack_start(self.right_vbox, True, True, 0)
 
-        # 2.1 顶部当前播放歌曲显示区域 - 宽度适配歌词区
-        self.build_current_playing_area(right_vbox)
-
-        # 2.2 右侧主内容区域（控制栏 + 歌词区）
-        self.build_main_content_area(right_vbox)
-
-    def build_current_playing_area(self, parent):
-        """构建顶部当前播放歌曲显示区域 - 宽度适配歌词区"""
-        playing_box = Gtk.Box(spacing=5)
-        playing_box.set_border_width(0)
-        playing_box.set_halign(Gtk.Align.START)  # 左对齐
-        playing_box.set_size_request(-1, 40)     # 固定高度
-        
-        # 当前歌曲显示标签（核心）
-        self.current_song_label = Gtk.Label()
-        self.current_song_label.set_markup('<span size="large" color="#e63946">未播放任何歌曲</span>')
-        # self.current_song_label.set_xalign(0.0)  # 左对齐
-        self.current_song_label.set_ellipsize(3)  # 文本过长时省略
-        self.current_song_label.set_size_request(720, -1)  # 限制宽度，适配歌词区
-        playing_box.pack_start(self.current_song_label, False, False, 0)
-        
-        parent.pack_start(playing_box, False, False, 0)
+        # 右侧主内容区域（歌词区）
+        self.build_lrc_area(self.right_vbox)
 
     def build_playlist_area(self, parent):
         """构建左侧播放列表 - 完全置顶，无任何顶部空白"""
         # 播放列表容器 - 无任何间距和内边距
-        playlist_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        playlist_box.set_size_request(250, -1)  # 固定宽度
-        playlist_box.set_border_width(0)
-        playlist_box.set_vexpand(True)  # 垂直扩展填满空间
-        parent.pack_start(playlist_box, False, False, 0)
+        self.playlist_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        self.playlist_box.set_size_request(300, -1)  # 固定宽度
+        self.playlist_box.set_border_width(0)
+        self.playlist_box.set_vexpand(True)  # 垂直扩展填满空间
+        parent.pack_start(self.playlist_box, False, False, 0)
 
         # 播放列表标题 + 加载状态 - 无间距
-        title_box = Gtk.Box(spacing=3)
-        playlist_title = Gtk.Label()
-        playlist_title.set_markup('<span weight="bold" size="xx-large" color="#e63946">铺音乐</span>')
-        playlist_title.set_margin_top(0)
-        playlist_title.set_margin_bottom(0)
-        playlist_title.set_size_request(-1, 40)  # 限制高度，适配歌词区
+        self.playing_box = Gtk.Box(spacing=3)
+        self.current_song_label = Gtk.Label()
+        self.current_song_label.set_markup('<span size="x-large" color="#e63946">未播放任何歌曲</span>')
+        self.current_song_label.set_margin_top(0)
+        self.current_song_label.set_margin_bottom(0)
+        self.current_song_label.set_xalign(0.0)  # 左对齐
+        self.current_song_label.set_ellipsize(3)  # 文本过长时省略
+        self.current_song_label.set_size_request(-1, 40)  # 限制高度，适配歌词区
         
         self.loading_label = Gtk.Label()
         self.loading_label.set_markup('<span size="small" color="#666666">加载中...</span>')
         self.loading_label.set_margin_top(0)
         self.loading_label.set_margin_bottom(0)
         
-        title_box.pack_start(playlist_title, True, True, 0)
-        title_box.pack_start(self.loading_label, False, False, 0)
-        playlist_box.pack_start(title_box, False, False, 0)
+        self.playing_box.pack_start(self.current_song_label, True, True, 0)
+        self.playing_box.pack_start(self.loading_label, False, False, 0)
+        self.playlist_box.pack_start(self.playing_box, False, False, 0)
+
+        # 进度条容器
+        self.progress_box = Gtk.Box(spacing=1)
+        self.scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
+        self.scale.set_draw_value(False)
+        
+        # 时长显示标签
+        self.label_duration = Gtk.Label(label='--:-- / --:--')  # 初始占位符
+        
+        # 组装进度条区域
+        self.progress_box.pack_start(self.scale, True, True, 0)
+        self.progress_box.pack_start(self.label_duration, False, False, 0)
+        self.playlist_box.pack_start(self.progress_box, False, False, 0)
+
+        # 播放控制按钮
+        self.playlist_ctrl = Gtk.Box(spacing=1)
+        self.btn_prev = Gtk.Button()
+        self.btn_prev.set_tooltip_text("上一曲")
+        icon = Gtk.Image.new_from_icon_name("media-skip-backward-symbolic", Gtk.IconSize.BUTTON)
+        self.btn_prev.set_image(icon)
+        self.btn_prev.set_always_show_image(True)  # 让图标居中显示
+
+        self.btn_play = Gtk.Button()
+        self.btn_play.set_tooltip_text("播放")
+        icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON)
+        self.btn_play.set_image(icon)
+        self.btn_play.set_always_show_image(True)  # 让图标居中显示
+
+        self.btn_next = Gtk.Button()
+        self.btn_next.set_tooltip_text("下一曲")
+        icon = Gtk.Image.new_from_icon_name("media-skip-forward-symbolic", Gtk.IconSize.BUTTON)
+        self.btn_next.set_image(icon)
+        self.btn_next.set_always_show_image(True)  # 让图标居中显示
+
+        self.btn_stop = Gtk.Button()
+        self.btn_stop.set_tooltip_text("停止")
+        icon = Gtk.Image.new_from_icon_name("media-playback-stop-symbolic", Gtk.IconSize.BUTTON)
+        self.btn_stop.set_image(icon)
+        self.btn_stop.set_always_show_image(True)  # 让图标居中显示
+
+        self.btn_prev.set_border_width(1)
+        self.btn_play.set_border_width(1)
+        self.btn_next.set_border_width(1)
+        self.btn_stop.set_border_width(1)
+
+        # 按钮信号连接
+        self.btn_prev.connect('clicked', self.on_prev_song)
+        self.btn_play.connect('clicked', self.on_play)
+        self.btn_next.connect('clicked', self.on_next_song)
+        self.btn_stop.connect('clicked', self.on_stop)
+        self.scale.connect('button-release-event', self.on_seek)
+
+        # 组装控制栏
+        self.playlist_ctrl.pack_start(self.btn_prev, True, False, 0)
+        self.playlist_ctrl.pack_start(self.btn_play, True, False, 0)
+        self.playlist_ctrl.pack_start(self.btn_next, True, False, 0)
+        self.playlist_ctrl.pack_start(self.btn_stop, True, False, 0)
 
         # 播放列表控制按钮 - 无间距
-        playlist_ctrl = Gtk.Box(spacing=3)
-        btn_add = Gtk.Button()
-        btn_add.set_tooltip_text("添加歌曲")
+        self.btn_add = Gtk.Button()
+        self.btn_add.set_tooltip_text("添加歌曲")
         icon = Gtk.Image.new_from_icon_name("list-add-symbolic", Gtk.IconSize.BUTTON)
-        btn_add.set_image(icon)
-        btn_add.set_always_show_image(True)  # 让图标居中显示
+        self.btn_add.set_image(icon)
+        self.btn_add.set_always_show_image(True)  # 让图标居中显示
 
-        btn_remove = Gtk.Button()
-        btn_remove.set_tooltip_text("删除歌曲")
+        self.btn_remove = Gtk.Button()
+        self.btn_remove.set_tooltip_text("删除歌曲")
         icon = Gtk.Image.new_from_icon_name("list-remove-symbolic", Gtk.IconSize.BUTTON)
-        btn_remove.set_image(icon)
-        btn_remove.set_always_show_image(True)  # 让图标居中显示
+        self.btn_remove.set_image(icon)
+        self.btn_remove.set_always_show_image(True)  # 让图标居中显示
 
-        btn_clear = Gtk.Button()
-        btn_clear.set_tooltip_text("清空列表")
+        self.btn_clear = Gtk.Button()
+        self.btn_clear.set_tooltip_text("清空列表")
         icon = Gtk.Image.new_from_icon_name("edit-clear-all-symbolic", Gtk.IconSize.BUTTON)
-        btn_clear.set_image(icon)
-        btn_clear.set_always_show_image(True)  # 让图标居中显示
+        self.btn_clear.set_image(icon)
+        self.btn_clear.set_always_show_image(True)  # 让图标居中显示
 
-        btn_add.set_border_width(4)
-        btn_remove.set_border_width(4)
-        btn_clear.set_border_width(4)
+        self.btn_add.set_border_width(1)
+        self.btn_remove.set_border_width(1)
+        self.btn_clear.set_border_width(1)
         
-        btn_add.connect('clicked', self.on_add_song)
-        btn_remove.connect('clicked', self.on_remove_song)
-        btn_clear.connect('clicked', self.on_clear_playlist)
-        playlist_ctrl.pack_start(btn_add, True, True, 0)
-        playlist_ctrl.pack_start(btn_remove, True, True, 0)
-        playlist_ctrl.pack_start(btn_clear, True, True, 0)
-        playlist_box.pack_start(playlist_ctrl, False, False, 0)
+        self.btn_add.connect('clicked', self.on_add_song)
+        self.btn_remove.connect('clicked', self.on_remove_song)
+        self.btn_clear.connect('clicked', self.on_clear_playlist)
+
+        self.playlist_ctrl.pack_start(self.btn_add, True, False, 0)
+        self.playlist_ctrl.pack_start(self.btn_remove, True, False, 0)
+        self.playlist_ctrl.pack_start(self.btn_clear, True, False, 0)
+        self.playlist_box.pack_start(self.playlist_ctrl, False, False, 0)
 
         # 播放列表滚动窗口 - 占满剩余空间，无空白
-        scrolled_playlist = Gtk.ScrolledWindow()
-        scrolled_playlist.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scrolled_playlist.set_border_width(0)
-        scrolled_playlist.set_vexpand(True)  # 垂直扩展
-        playlist_box.pack_start(scrolled_playlist, True, True, 0)
+        self.scrolled_playlist = Gtk.ScrolledWindow()
+        self.scrolled_playlist.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.scrolled_playlist.set_border_width(0)
+        self.scrolled_playlist.set_vexpand(True)  # 垂直扩展
+        self.playlist_box.pack_start(self.scrolled_playlist, True, True, 0)
 
         # 播放列表TreeView
         self.playlist_store = Gtk.ListStore(str, str, float)
         self.playlist_view = Gtk.TreeView(model=self.playlist_store)
+        self.playlist_view.set_headers_visible(False)
         self.playlist_view.set_border_width(0)
         
         # 移除选中背景样式
@@ -272,113 +307,72 @@ class MusicPlayer(Gtk.Window):
         )
 
         # 自定义单元格渲染器
-        renderer_name = Gtk.CellRendererText()
+        renderer_list = Gtk.CellRendererText()
+        renderer_time = Gtk.CellRendererText()
+        renderer_list.set_property("xalign",0.0) # 单元格左对齐
+        renderer_time.set_property("xalign",1.0) # 单元格右对齐
         def cell_data_func(column, cell, model, iter_, data):
             path = model.get_path(iter_)
             row_idx = path[0]
+            music_time = str(self.format_time(model[iter_][2]))
+            cell.set_property('cell-background',None)
             if row_idx == self.current_song_idx and self.play_flag:
-                cell.set_property('markup', f'<span color="#e63946" weight="bold" size="large">{model[iter_][1]}</span>')
+                cell.set_property('cell-background','#E0E0E0')
+                if "播放列表" in column.get_title():
+                    cell.set_property('markup', f'<span color="#e63946" weight="bold">{model[iter_][1]}</span>')
+                elif "音乐时长" in column.get_title():
+                    cell.set_property('markup', f'<span color="#e63946">{music_time}</span>')
             else:
-                cell.set_property('text', model[iter_][1])
+                if "播放列表" in column.get_title():
+                    cell.set_property('text', model[iter_][1])
+                elif "音乐时长" in column.get_title():
+                    cell.set_property('text', music_time)
         
-        column_name = Gtk.TreeViewColumn('播放列表', renderer_name)
-        column_name.set_cell_data_func(renderer_name, cell_data_func)
-        column_name.set_expand(True)
-        self.playlist_view.append_column(column_name)
+        self.column_list = Gtk.TreeViewColumn('播放列表', renderer_list)
+        self.column_list.set_cell_data_func(renderer_list, cell_data_func)
+        self.column_list.set_expand(True)
+        self.playlist_view.append_column(self.column_list)
+
+        self.column_time = Gtk.TreeViewColumn('音乐时长', renderer_time)
+        self.column_time.set_cell_data_func(renderer_time, cell_data_func)
+        self.column_time.set_expand(True)
+        self.playlist_view.append_column(self.column_time)
 
         # 播放模式按钮区域 - 无间距
-        mode_box = Gtk.Box(spacing=1)
+        self.mode_box = Gtk.Box(spacing=1)
         # 创建三个播放模式按钮
         for i, tooltip in enumerate(self.mode_labels):
-            btn = Gtk.Button()
+            self.btn = Gtk.Button()
             (key, value), = tooltip.items()
-            btn.set_tooltip_text(key)
+            self.btn.set_tooltip_text(key)
             icon = Gtk.Image.new_from_icon_name(value, Gtk.IconSize.BUTTON)
-            btn.set_image(icon)
-            btn.set_always_show_image(True)  # 让图标居中显示
-            btn.connect('clicked', self.on_mode_button_click, i)
-            btn.set_border_width(2)
-            self.mode_buttons.append(btn)
-            mode_box.pack_start(btn, True, True, 0)
-        playlist_box.pack_start(mode_box, False, False, 0)
+            self.btn.set_image(icon)
+            self.btn.set_always_show_image(True)  # 让图标居中显示
+            self.btn.connect('clicked', self.on_mode_button_click, i)
+            self.btn.set_border_width(1)
+            self.mode_buttons.append(self.btn)
+            self.mode_box.pack_start(self.btn, True, True, 0)
+
+        self.btn_lrc = Gtk.Button()
+        self.btn_lrc.set_tooltip_text("关闭歌词")
+        self.btn_lrc.set_label('词')
+
+        self.btn_lrc.set_border_width(1)
+        
+        self.btn_lrc.connect('clicked', self.on_close_open_lrc)
+        self.mode_box.pack_start(self.btn_lrc, True, True, 0)
+
+        self.playlist_box.pack_start(self.mode_box, False, False, 0)
 
         # 初始化选中状态
         self.update_mode_buttons_style()
+        self.update_lrc_buttons_style()
 
         # 点击事件
         self.playlist_view.get_selection().set_mode(Gtk.SelectionMode.NONE)
         self.playlist_view.connect('button-press-event', self.on_playlist_click_new)
         
-        scrolled_playlist.add(self.playlist_view)
-
-    def build_main_content_area(self, parent):
-        """构建右侧主内容（控制栏 + 歌词区）"""
-        main_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        main_vbox.set_border_width(0)
-        parent.pack_start(main_vbox, True, True, 0)
-
-        # 顶部控制栏
-        hbox_ctrl = Gtk.Box(spacing=5)
-        
-        # 播放控制按钮
-        self.btn_prev = Gtk.Button()
-        self.btn_prev.set_tooltip_text("上一曲")
-        icon = Gtk.Image.new_from_icon_name("media-skip-backward-symbolic", Gtk.IconSize.BUTTON)
-        self.btn_prev.set_image(icon)
-        self.btn_prev.set_always_show_image(True)  # 让图标居中显示
-
-        self.btn_play = Gtk.Button()
-        self.btn_play.set_tooltip_text("播放")
-        icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON)
-        self.btn_play.set_image(icon)
-        self.btn_play.set_always_show_image(True)  # 让图标居中显示
-
-        self.btn_next = Gtk.Button()
-        self.btn_next.set_tooltip_text("下一曲")
-        icon = Gtk.Image.new_from_icon_name("media-skip-forward-symbolic", Gtk.IconSize.BUTTON)
-        self.btn_next.set_image(icon)
-        self.btn_next.set_always_show_image(True)  # 让图标居中显示
-
-        self.btn_stop = Gtk.Button()
-        self.btn_stop.set_tooltip_text("停止")
-        icon = Gtk.Image.new_from_icon_name("media-playback-stop-symbolic", Gtk.IconSize.BUTTON)
-        self.btn_stop.set_image(icon)
-        self.btn_stop.set_always_show_image(True)  # 让图标居中显示
-
-        self.btn_prev.set_border_width(4)
-        self.btn_play.set_border_width(4)
-        self.btn_next.set_border_width(4)
-        self.btn_stop.set_border_width(4)
-        
-        # 进度条容器
-        progress_box = Gtk.Box(spacing=5)
-        self.scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
-        self.scale.set_draw_value(False)
-        
-        # 时长显示标签
-        self.label_duration = Gtk.Label(label='--:-- / --:--')  # 初始占位符
-        
-        # 组装进度条区域
-        progress_box.pack_start(self.scale, True, True, 0)
-        progress_box.pack_start(self.label_duration, False, False, 0)
-
-        # 按钮信号连接
-        self.btn_prev.connect('clicked', self.on_prev_song)
-        self.btn_play.connect('clicked', self.on_play)
-        self.btn_next.connect('clicked', self.on_next_song)
-        self.btn_stop.connect('clicked', self.on_stop)
-        self.scale.connect('button-release-event', self.on_seek)
-
-        # 组装控制栏
-        hbox_ctrl.pack_start(self.btn_prev, False, False, 0)
-        hbox_ctrl.pack_start(self.btn_play, False, False, 0)
-        hbox_ctrl.pack_start(self.btn_next, False, False, 0)
-        hbox_ctrl.pack_start(self.btn_stop, False, False, 0)
-        hbox_ctrl.pack_start(progress_box, True, True, 0)
-        main_vbox.pack_start(hbox_ctrl, False, False, 0)
-
-        # 歌词滚动显示区域
-        self.build_lrc_area(main_vbox)
+        self.scrolled_playlist.add(self.playlist_view)
 
     def build_lrc_area(self, parent):
         """构建歌词显示区域"""
@@ -415,6 +409,20 @@ class MusicPlayer(Gtk.Window):
             
         print(f"切换播放模式: {self.mode_labels[self.play_mode]}")
 
+    # 底部按钮样式
+    def update_buttons_style(self, widget):
+        widget.add_class('suggested-action')
+        style_provider = Gtk.CssProvider()
+        css = """
+        .suggested-action {
+            background-color: #e63946;
+            color: white;
+            font-weight: bold;
+        }
+        """
+        style_provider.load_from_data(css.encode('utf-8'))
+        widget.add_provider(style_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
     # 更新播放模式按钮样式
     def update_mode_buttons_style(self):
         """更新播放模式按钮的选中高亮样式"""
@@ -423,17 +431,28 @@ class MusicPlayer(Gtk.Window):
             ctx.remove_class('suggested-action')
             ctx.remove_class('active')
             if i == self.play_mode:
-                ctx.add_class('suggested-action')
-                style_provider = Gtk.CssProvider()
-                css = """
-                .suggested-action {
-                    background-color: #e63946;
-                    color: white;
-                    font-weight: bold;
-                }
-                """
-                style_provider.load_from_data(css.encode('utf-8'))
-                ctx.add_provider(style_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+                self.update_buttons_style(ctx)
+    
+    # 关闭/打开歌词
+    def update_lrc_buttons_style(self):
+        ctx = self.btn_lrc.get_style_context()
+        self.update_buttons_style(ctx)
+
+    # 关闭/打开歌词
+    def on_close_open_lrc(self, widget):
+        ctx = self.btn_lrc.get_style_context()
+        ctx.remove_class('suggested-action')
+        ctx.remove_class('active')
+        isVisible = self.right_vbox.get_property("visible")
+        if (isVisible):
+            self.right_vbox.hide()
+            self.btn_lrc.set_tooltip_text("打开歌词")
+            self.resize(300, 600)
+        else:
+            self.right_vbox.show()
+            self.update_buttons_style(ctx)
+            self.btn_lrc.set_tooltip_text("关闭歌词")
+            self.resize(600, 600)
 
     # 播放列表点击事件
     def on_playlist_click_new(self, widget, event):
@@ -463,7 +482,7 @@ class MusicPlayer(Gtk.Window):
             self.lrc_listbox.remove(child)
         self.lrc_labels.clear()
         init_label = Gtk.Label()
-        init_label.set_markup('<span size="xx-large" weight="bold">未找到歌词</span>')
+        init_label.set_markup('<span size="x-large" weight="bold">未找到歌词</span>')
         self.lrc_listbox.add(init_label)
         self.lrc_labels.append(init_label)
         self.lrc_listbox.show_all()
@@ -481,30 +500,13 @@ class MusicPlayer(Gtk.Window):
             return "--:--"
 
     def get_song_duration_fast(self, file_path):
-        """快速获取时长（优化异常处理）"""
-        if FAST_LOAD:
-            return 0.0
-        try:
-            temp_player = Gst.ElementFactory.make('playbin', 'temp_player')
-            temp_player.set_property('uri', f'file://{file_path}')
-            timeout = 1
-            start = GLib.get_monotonic_time() / 1000000
-            while temp_player.get_state(0.1)[1] != Gst.State.READY:
-                if GLib.get_monotonic_time() / 1000000 - start > timeout:
-                    temp_player.set_state(Gst.State.NULL)
-                    return 0.0
-                GLib.usleep(50000)
-            dur = temp_player.query_duration(Gst.Format.TIME)[1] / Gst.SECOND
-            temp_player.set_state(Gst.State.NULL)
-            return max(0, dur)  # 确保时长非负
-        except:
-            return 0.0
+        audio = File(file_path)
+        dur = audio.info.length
+        return dur
 
     def add_song_to_playlist(self, song_info):
-        """线程安全的添加歌曲到播放列表"""
+        """添加歌曲到播放列表"""
         file_path, song_name, duration_sec = song_info
-        # 确保时长非负
-        duration_sec = max(0, duration_sec)
         self.playlist.append((file_path, song_name, duration_sec))
         self.playlist_store.append([file_path, song_name, duration_sec])
         if len(self.playlist) == 1:
@@ -512,8 +514,8 @@ class MusicPlayer(Gtk.Window):
             self.load_song(0, auto_play=False)
             self.update_current_song_display()
 
-    def load_music_folder_background(self):
-        """后台线程加载歌曲"""
+    def load_music_folder(self):
+        """加载歌曲"""
         audio_extensions = ['.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', 'wma']
         song_count = 0
         if os.path.exists(MUSIC_DIR):
@@ -529,31 +531,6 @@ class MusicPlayer(Gtk.Window):
         GLib.idle_add(self.loading_label.set_markup, 
                      f'<span size="small" color="#666666">已加载 {song_count} 首</span>')
         print(f"加载完成：共 {song_count} 首歌曲")
-
-    def load_music_folder_async(self):
-        """异步加载音乐文件夹"""
-        self.loading_thread = threading.Thread(target=self.load_music_folder_background)
-        self.loading_thread.daemon = True
-        self.loading_thread.start()
-
-    def lazy_load_duration(self, file_path):
-        """播放时懒加载时长（优化异常处理）"""
-        if not FAST_LOAD:
-            return 0.0
-        try:
-            # 先检查是否能获取时长
-            success, dur_ns = self.player.query_duration(Gst.Format.TIME)
-            if not success:
-                return 0.0
-            dur = dur_ns / Gst.SECOND
-            dur = max(0, dur)  # 确保非负
-            for i, (path, name, _) in enumerate(self.playlist):
-                if path == file_path:
-                    self.playlist[i] = (path, name, dur)
-                    break
-            return dur
-        except:
-            return 0.0
 
     def update_lrc_display(self):
         """更新歌词显示"""
@@ -580,7 +557,7 @@ class MusicPlayer(Gtk.Window):
             return
         for i, label in enumerate(self.lrc_labels):
             if i == index:
-                label.set_markup(f'<span size="xx-large" weight="bold" color="#e63946">{self.lrc.lrc_list[i][1]}</span>')
+                label.set_markup(f'<span size="x-large" weight="bold" color="#e63946">{self.lrc.lrc_list[i][1]}</span>')
             else:
                 label.set_markup(f'<span size="large" color="#333333">{self.lrc.lrc_list[i][1]}</span>')
         adj = self.scrolled_lrc.get_vadjustment()
@@ -595,15 +572,15 @@ class MusicPlayer(Gtk.Window):
     def update_current_song_display(self):
         """更新顶部当前播放歌曲标签"""
         if self.current_song_idx != -1 and not os.path.exists(self.playlist[self.current_song_idx][0]):
-            self.current_song_label.set_markup('<span size="large" color="#666666">未找到歌曲</span>')
+            self.current_song_label.set_markup('<span size="x-large" color="#666666">未找到歌曲</span>')
         elif self.current_song_idx >= 0 and self.current_song_idx < len(self.playlist):
             song_name = self.playlist[self.current_song_idx][1]
             if self.play_flag:
-                self.current_song_label.set_markup(f'<span size="large" weight="bold">当前播放: </span><span size="large" color="#e63946" weight="bold">{song_name}</span>')
+                self.current_song_label.set_markup(f'<span size="x-large" color="#e63946" weight="bold">{song_name}</span>')
             else:
-                self.current_song_label.set_markup(f'<span size="large" weight="bold">当前暂停: </span><span size="large" color="#aaaaaa" weight="bold">{song_name}</span>')
+                self.current_song_label.set_markup(f'<span size="x-large" color="#aaaaaa" weight="bold">{song_name}</span>')
         else:
-            self.current_song_label.set_markup('<span size="large" color="#666666">未播放任何歌曲</span>')
+            self.current_song_label.set_markup('<span size="x-large" color="#666666">未播放任何歌曲</span>')
         if self.playlist_view:
             self.playlist_view.queue_draw()
 
@@ -623,14 +600,7 @@ class MusicPlayer(Gtk.Window):
         
         # 设置播放文件
         self.player.set_property('uri', f'file://{song_path}')
-
-        # 懒加载时长并更新显示
-        if FAST_LOAD and duration_sec == 0.0:
-            # 异步加载时长，避免阻塞UI
-            GLib.idle_add(self.load_duration_and_update, song_path, idx)
-        else:
-            self.current_duration = max(0, duration_sec)
-            self.label_duration.set_label(f"00:00 / {self.format_time(self.current_duration)}")
+        self.label_duration.set_label(f"00:00 / {self.format_time(self.current_duration)}")
         
         # 加载歌词
         base = os.path.splitext(song_path)[0]
@@ -649,13 +619,6 @@ class MusicPlayer(Gtk.Window):
             GLib.idle_add(self.delayed_play)
         
         self.update_current_song_display()
-
-    def load_duration_and_update(self, song_path, idx):
-        """异步加载时长并更新显示"""
-        duration_sec = self.lazy_load_duration(song_path)
-        self.current_duration = max(0, duration_sec)
-        self.playlist[idx] = (song_path, self.playlist[idx][1], duration_sec)
-        self.label_duration.set_label(f"00:00 / {self.format_time(self.current_duration)}")
 
     def on_add_song(self, widget):
         """手动添加歌曲到播放列表"""
@@ -898,7 +861,7 @@ class MusicPlayer(Gtk.Window):
                 pos = max(0, min(pos, dur))  # 限制进度在0~总时长之间
             
             # 更新缓存时长
-            if FAST_LOAD and self.current_duration == 0.0 and dur > 0:
+            if self.current_duration == 0.0 and dur > 0:
                 self.current_duration = dur
                 idx = self.current_song_idx
                 if idx >=0 and idx < len(self.playlist):
