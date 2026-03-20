@@ -13,7 +13,6 @@ import re
 import pathlib
 import threading
 from mutagen import File
-import cairo
 
 # 初始化GStreamer
 Gst.init(None)
@@ -87,7 +86,7 @@ class MusicPlayer(Gtk.Window):
     def __init__(self):
         super().__init__(title='铺音乐播放器')
         self.set_default_size(600, 600)
-        self.set_border_width(10)
+        self.set_border_width(0)
         self.set_icon_name("folder-music-symbolic")
 
         # 核心状态
@@ -132,8 +131,7 @@ class MusicPlayer(Gtk.Window):
         GLib.timeout_add(300, self.update_ui)
 
     # 清理背景
-    def clear_widget_bg(self, widget):
-        css = f"* {{ background-color: transparent; }}"
+    def clear_widget_bg(self, widget, css=f"* {{ background-color: transparent; }}"):
         provider = Gtk.CssProvider()
         provider.load_from_data(css.encode())
         widget.get_style_context().add_provider(provider, 600)
@@ -144,13 +142,10 @@ class MusicPlayer(Gtk.Window):
         self.main_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)  # 无间距
         self.main_vbox.set_border_width(0)  # 无内边距
         self.add(self.main_vbox)
-        css = f"* {{ background-color: rgba(255, 255, 255, 0.9) }}"
-        provider = Gtk.CssProvider()
-        provider.load_from_data(css.encode())
-        self.main_vbox.get_style_context().add_provider(provider, 600)
+        self.clear_widget_bg(self.main_vbox, css=f"* {{ background-color: rgba(255, 255, 255, 0.9) }}")
         
         # 主体内容：播放列表(左) + 右侧内容(右) - 关键：先放主体，再放顶部播放状态
-        self.content_hbox = Gtk.Box(spacing=8)  # 仅左右间距
+        self.content_hbox = Gtk.Box()
         self.content_hbox.set_border_width(0)
         self.main_vbox.pack_start(self.content_hbox, True, True, 0)
         self.clear_widget_bg(self.content_hbox)
@@ -177,11 +172,13 @@ class MusicPlayer(Gtk.Window):
         self.playlist_box.set_vexpand(True)  # 垂直扩展填满空间
         parent.pack_start(self.playlist_box, False, False, 0)
         self.clear_widget_bg(self.playlist_box)
+        self.playlist_box.set_margin_start(10)
+        self.playlist_box.set_margin_end(10)
 
         # 播放列表标题 + 加载状态 - 无间距
         self.playing_box = Gtk.Box(spacing=3)
         self.current_song_label = Gtk.Label()
-        self.current_song_label.set_markup('<span size="x-large" color="#e63946">未播放任何歌曲</span>')
+        self.current_song_label.set_markup('<span size="x-large" color="#3584e4">未播放任何歌曲</span>')
         self.current_song_label.set_margin_top(0)
         self.current_song_label.set_margin_bottom(0)
         self.current_song_label.set_xalign(0.0)  # 左对齐
@@ -295,6 +292,21 @@ class MusicPlayer(Gtk.Window):
 
         self.clear_widget_bg(self.scrolled_playlist)
 
+        css = """
+        .bordered-playlist {
+            border: 1px solid #b8b8b8;   /* 粗细、实线、颜色 */
+            border-radius: 5px;          /* 圆角 */
+            padding: 5px;               /* 文字与边框间距 */
+        }
+        """
+        provider = Gtk.CssProvider()
+        provider.load_from_data(css)
+        Gtk.StyleContext.add_provider_for_screen(
+            Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+
+        self.scrolled_playlist.get_style_context().add_class("bordered-playlist")  # 应用边框
+
         # 播放列表TreeView
         self.playlist_store = Gtk.ListStore(str, str, float)
         self.playlist_view = Gtk.TreeView(model=self.playlist_store)
@@ -316,9 +328,9 @@ class MusicPlayer(Gtk.Window):
             if row_idx == self.current_song_idx and self.play_flag:
                 cell.set_property('cell-background','#E0E0E0')
                 if "播放列表" in column.get_title():
-                    cell.set_property('markup', f'<span color="#e63946" weight="bold">{model[iter_][1]}</span>')
+                    cell.set_property('markup', f'<span color="#3584e4" weight="bold">{model[iter_][1]}</span>')
                 elif "音乐时长" in column.get_title():
-                    cell.set_property('markup', f'<span color="#e63946">{music_time}</span>')
+                    cell.set_property('markup', f'<span color="#3584e4">{music_time}</span>')
             else:
                 if "播放列表" in column.get_title():
                     cell.set_property('text', model[iter_][1])
@@ -380,6 +392,23 @@ class MusicPlayer(Gtk.Window):
         parent.pack_start(self.scrolled_lrc, True, True, 0)
         self.clear_widget_bg(self.scrolled_lrc)
 
+        css = """
+        .bordered-lrc {
+            border-left: 1px solid #b8b8b8;   /* 粗细、实线、颜色 */
+            border-right: none;
+            border-top: none;
+            border-bottom: none;
+            border-radius: 0px;
+        }
+        """
+        provider = Gtk.CssProvider()
+        provider.load_from_data(css)
+        Gtk.StyleContext.add_provider_for_screen(
+            Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+
+        self.scrolled_lrc.get_style_context().add_class("bordered-lrc")  # 应用边框
+
         # 歌词列表ListBox
         self.lrc_listbox = Gtk.ListBox()
         self.lrc_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
@@ -414,7 +443,7 @@ class MusicPlayer(Gtk.Window):
         style_provider = Gtk.CssProvider()
         css = """
         .suggested-action {
-            background-color: #e63946;
+            background-color: #3584e4;
             color: white;
             font-weight: bold;
         }
@@ -557,7 +586,7 @@ class MusicPlayer(Gtk.Window):
             return
         for i, label in enumerate(self.lrc_labels):
             if i == index:
-                label.set_markup(f'<span size="x-large" weight="bold" color="#e63946">{self.lrc.lrc_list[i][1]}</span>')
+                label.set_markup(f'<span size="x-large" weight="bold" color="#3584e4">{self.lrc.lrc_list[i][1]}</span>')
             else:
                 label.set_markup(f'<span size="large" color="#333333">{self.lrc.lrc_list[i][1]}</span>')
         adj = self.scrolled_lrc.get_vadjustment()
@@ -576,7 +605,7 @@ class MusicPlayer(Gtk.Window):
         elif self.current_song_idx >= 0 and self.current_song_idx < len(self.playlist):
             song_name = self.playlist[self.current_song_idx][1]
             if self.play_flag:
-                self.current_song_label.set_markup(f'<span size="x-large" color="#e63946" weight="bold">{song_name}</span>')
+                self.current_song_label.set_markup(f'<span size="x-large" color="#3584e4" weight="bold">{song_name}</span>')
             else:
                 self.current_song_label.set_markup(f'<span size="x-large" color="#aaaaaa" weight="bold">{song_name}</span>')
         else:
@@ -626,21 +655,23 @@ class MusicPlayer(Gtk.Window):
         audio = File(self.playlist[self.current_song_idx][0])
         if hasattr(audio,"pictures") and audio.pictures != []:
             image_bytes = audio.pictures[0].data
+        else:
+            image_bytes = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x03\x00\x00\x00\x03\x08\x06\x00\x00\x00V(\xb5\xbf\x00\x00\x00\x01sRGB\x00\xae\xce\x1c\xe9\x00\x00\x00\x04gAMA\x00\x00\xb1\x8f\x0b\xfca\x05\x00\x00\x00\tpHYs\x00\x00\x0e\xc4\x00\x00\x0e\xc4\x01\x95+\x0e\x1b\x00\x00\x00\x18IDAT\x18Wc\xfc\xf7\xef\xdf\x7f\x06(`\x82\xd2`\x80\xc4a`\x00\x00\x91\x9b\x03\xff\xd7\\\xf9\xa0\x00\x00\x00\x00IEND\xaeB`\x82'
 
-            # 从数据流生成 pixbuf
-            inp = Gio.MemoryInputStream.new_from_data(image_bytes)
-            pb = GdkPixbuf.Pixbuf.new_from_stream(inp, None)
+        # 从数据流生成 pixbuf
+        inp = Gio.MemoryInputStream.new_from_data(image_bytes)
+        pb = GdkPixbuf.Pixbuf.new_from_stream(inp, None)
 
-            # 直接给 box 画背景（核心就这一段）
-            def on_draw(widget, cr):
-                w = widget.get_allocated_width()
-                h = widget.get_allocated_height()
-                spb = pb.scale_simple(w, h, GdkPixbuf.InterpType.BILINEAR)
-                Gdk.cairo_set_source_pixbuf(cr, spb, 0, 0)
-                cr.paint()
+        # 直接给 box 画背景（核心就这一段）
+        def on_draw(widget, cr):
+            w = widget.get_allocated_width()
+            h = widget.get_allocated_height()
+            spb = pb.scale_simple(w, h, GdkPixbuf.InterpType.BILINEAR)
+            Gdk.cairo_set_source_pixbuf(cr, spb, 0, 0)
+            cr.paint()
                 
-                return False
-            self.main_vbox.connect("draw", on_draw)
+            return False
+        self.main_vbox.connect("draw", on_draw)
 
     def on_add_song(self, widget):
         """手动添加歌曲到播放列表"""
@@ -779,6 +810,10 @@ class MusicPlayer(Gtk.Window):
         self.update_current_song_display()
         self.add_background()
 
+        # 保持选中歌曲可见
+        path = Gtk.TreePath.new_from_indices([self.current_song_idx])
+        self.playlist_view.scroll_to_cell(path, None, False, 0.0)
+
     def on_next_song(self, widget):
         """下一曲"""
         if not self.playlist:
@@ -806,6 +841,10 @@ class MusicPlayer(Gtk.Window):
         self.update_current_song_display()
         self.add_background()
 
+        # 保持选中歌曲可见
+        path = Gtk.TreePath.new_from_indices([self.current_song_idx])
+        self.playlist_view.scroll_to_cell(path, None, False, 0.0)
+
     def on_play(self, widget):
         """播放/暂停"""
         if not self.playlist or self.current_song_idx == -1:
@@ -825,8 +864,8 @@ class MusicPlayer(Gtk.Window):
                 self.btn_play.set_tooltip_text("播放")
                 icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON)
                 self.btn_play.set_image(icon)
+            self.add_background()
         self.update_current_song_display()
-        self.add_background()
 
     def on_stop(self, widget):
         """停止播放（优化时长显示）"""
