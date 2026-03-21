@@ -434,8 +434,6 @@ class MusicPlayer(Gtk.Window):
             # 退出随机模式时恢复原始列表
             self.random_playlist = []
             self.random_index = -1
-            
-        print(f"切换播放模式: {self.mode_labels[self.play_mode]}")
 
     # 底部按钮样式
     def update_buttons_style(self, widget):
@@ -553,13 +551,19 @@ class MusicPlayer(Gtk.Window):
                 if file_path.suffix.lower() in audio_extensions:
                     audio_files.append(str(file_path))
             for file_path in audio_files:
-                song_name = os.path.splitext(os.path.basename(file_path))[0]
+                # song_name = os.path.splitext(os.path.basename(file_path))[0]
+                audio = File(file_path)
+                song_name = audio['title'][0] + "-" + audio['artist'][0]
+                max_length = 20
+                if len(song_name) > max_length:
+                    song_name = song_name[:max_length] + "..."
+                else:
+                    song_name = song_name
                 duration_sec = self.get_song_duration_fast(file_path)
                 GLib.idle_add(self.add_song_to_playlist, (file_path, song_name, duration_sec))
                 song_count += 1
         GLib.idle_add(self.loading_label.set_markup, 
                      f'<span size="small" color="#666666">已加载 {song_count} 首</span>')
-        print(f"加载完成：共 {song_count} 首歌曲")
 
     def update_lrc_display(self):
         """更新歌词显示"""
