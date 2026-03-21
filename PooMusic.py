@@ -551,10 +551,14 @@ class MusicPlayer(Gtk.Window):
                 if file_path.suffix.lower() in audio_extensions:
                     audio_files.append(str(file_path))
             for file_path in audio_files:
-                # song_name = os.path.splitext(os.path.basename(file_path))[0]
                 audio = File(file_path)
-                song_name = audio['title'][0] + "-" + audio['artist'][0]
-                max_length = 20
+                if 'title' in audio and 'artist' in audio:
+                    song_name = audio['title'][0] + "-" + audio['artist'][0]
+                elif 'TIT2' in audio and 'TPE1' in audio:
+                    song_name = str(audio['TIT2']) + "-" + str(audio['TPE1'])
+                else:
+                    song_name = os.path.splitext(os.path.basename(file_path))[0]
+                max_length = 18
                 if len(song_name) > max_length:
                     song_name = song_name[:max_length] + "..."
                 else:
