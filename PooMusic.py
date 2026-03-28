@@ -541,6 +541,22 @@ class MusicPlayer(Gtk.Window):
             self.load_song(0, auto_play=False)
             self.update_current_song_display()
 
+    # 获取歌名
+    def get_song_name(self,file_path):
+        audio = File(file_path)
+        if 'title' in audio and 'artist' in audio:
+            song_name = audio['title'][0] + "-" + audio['artist'][0]
+        elif 'TIT2' in audio and 'TPE1' in audio:
+            song_name = str(audio['TIT2']) + "-" + str(audio['TPE1'])
+        else:
+            song_name = os.path.splitext(os.path.basename(file_path))[0]
+        max_length = 18
+        if len(song_name) > max_length:
+            song_name = song_name[:max_length] + "..."
+        else:
+            song_name = song_name
+        return song_name
+
     def load_music_folder(self):
         """加载歌曲"""
         audio_extensions = ['.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', 'wma']
@@ -551,18 +567,7 @@ class MusicPlayer(Gtk.Window):
                 if file_path.suffix.lower() in audio_extensions:
                     audio_files.append(str(file_path))
             for file_path in audio_files:
-                audio = File(file_path)
-                if 'title' in audio and 'artist' in audio:
-                    song_name = audio['title'][0] + "-" + audio['artist'][0]
-                elif 'TIT2' in audio and 'TPE1' in audio:
-                    song_name = str(audio['TIT2']) + "-" + str(audio['TPE1'])
-                else:
-                    song_name = os.path.splitext(os.path.basename(file_path))[0]
-                max_length = 18
-                if len(song_name) > max_length:
-                    song_name = song_name[:max_length] + "..."
-                else:
-                    song_name = song_name
+                song_name = self.get_song_name(file_path)
                 duration_sec = self.get_song_duration_fast(file_path)
                 GLib.idle_add(self.add_song_to_playlist, (file_path, song_name, duration_sec))
                 song_count += 1
@@ -705,7 +710,8 @@ class MusicPlayer(Gtk.Window):
             paths = dlg.get_filenames()
             for path in paths:
                 if path not in [item[0] for item in self.playlist]:
-                    song_name = os.path.splitext(os.path.basename(path))[0]
+                    #song_name = os.path.splitext(os.path.basename(path))[0]
+                    song_name = self.get_song_name(path)
                     duration_sec = self.get_song_duration_fast(path)
                     self.playlist.append((path, song_name, duration_sec))
                     self.playlist_store.append([path, song_name, duration_sec])
